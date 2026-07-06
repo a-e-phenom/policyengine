@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Shield, GitBranch, Users, RefreshCw, MapPin, Database, FileText, Plus, Trash2,
   ChevronRight, Save, X, Check, ChevronDown,
@@ -79,9 +79,18 @@ const POLICY_TYPES = [
 ];
 
 const TAXONOMY_SEED = {
-  "Talent Acquisition": ["Sourcing", "Screening", "Interview Intelligence", "Offer Management"],
-  "Total Rewards": ["Compensation", "Benefits"],
+  "Analytics": ["Reporting", "Insights"],
+  "Automation Engine": ["Workflow Automation", "Triggers"],
+  "Candidate Experience (CX)": ["Candidate Portal", "Communications"],
   "Compliance": ["EEOC", "Data Privacy", "Background Check"],
+  "Data": ["Data Quality", "Master Data"],
+  "Employee Experience (EX)": ["Employee Portal", "Self-Service"],
+  "Employee Onboarding Experience": ["Onboarding Journey", "Document Collection"],
+  "Hiring Automations": ["Screening Automation", "Scheduling Automation"],
+  "Hiring Intelligence": ["Interview Intelligence"],
+  "Integration Experience (IX)": ["API Integrations", "Connectors"],
+  "Talent Acquisition": ["Sourcing", "Screening", "Offer Management"],
+  "Total Rewards": ["Compensation", "Benefits"],
 };
 
 const PERSONAS = ["Candidate", "Recruiter", "Hiring Manager", "Interviewer", "HRBP", "Compliance Reviewer"];
@@ -117,7 +126,6 @@ const ENFORCEMENT_STAGES = ["Immediate", "Application", "Screening", "Interview"
 // Approvers for human-in-the-loop escalation gates.
 const APPROVERS = ["Legal", "Compliance Reviewer", "HRBP", "Talent Leadership"];
 
-// The specific capability or workflow action this policy gates (e.g. "Interview Recording").
 const CONTROLLED_ACTIONS_BY_FN = {
   "Interview Intelligence": ["Interview Recording", "Interview Scheduling", "Interview Transcription", "AI Interview Analysis"],
   "Screening": ["Application Submission", "Application Progression", "Background Check Initiation", "Screening Decision"],
@@ -130,6 +138,28 @@ const CONTROLLED_ACTIONS_BY_FN = {
   "Background Check": ["Background Check Initiation"],
 };
 
+const CONTROLLED_ACTION_LABELS = {
+  "Interview Recording": "Recording",
+  "AI Interview Analysis": "AI Insights",
+  "Interview Scheduling": "Scheduling",
+  "Interview Transcription": "Transcription",
+};
+
+function controlledActionLabel(action) {
+  return CONTROLLED_ACTION_LABELS[action] || action;
+}
+
+function getBranchControlledActions(branch, policyAction = "") {
+  if (branch?.controlledActions?.length) return branch.controlledActions;
+  if (branch?.controlledAction) return [branch.controlledAction];
+  if (policyAction) return [policyAction];
+  return [];
+}
+
+function formatControlledActionsList(actions) {
+  return actions.map(controlledActionLabel).join(", ");
+}
+
 function getControlledActionOptions(fn) {
   return CONTROLLED_ACTIONS_BY_FN[fn] || ["Workflow Step"];
 }
@@ -140,13 +170,73 @@ function defaultControlledAction(existing) {
   return options[0] || "";
 }
 
-function OutcomeWithAction({ outcome, controlledAction }) {
+const CONFIG_MODES = [
+  { id: "policy", label: "V1" },
+  { id: "rule", label: "V2" },
+];
+
+function defaultBranchControlledActions(fn, policyAction, outcome) {
+  const options = getControlledActionOptions(fn);
+  if (Array.isArray(policyAction) && policyAction.length) return policyAction.filter((a) => options.includes(a));
+  if (policyAction && options.includes(policyAction)) return [policyAction];
+  if (outcome === "Allow" || outcome === "Advance") return [];
+  return options[0] ? [options[0]] : [];
+}
+
+function hydrateBranchesForMode(branches, { existing, fn, policyControlledAction, policyTrigger, configMode }) {
+  if (configMode !== "rule") return branches;
+  const settings = existing?.branchSettings || [];
+  return branches.map((b, i) => {
+    const saved = settings.find((s) => s.kind === b.kind && (s.index === undefined || s.index === i))
+      || settings[i];
+    const savedActions = saved?.controlledActions || (saved?.controlledAction ? [saved.controlledAction] : null);
+    const branchActions = b.controlledActions?.length
+      ? b.controlledActions
+      : savedActions || defaultBranchControlledActions(fn, b.controlledAction || policyControlledAction, b.outcome);
+    return {
+      ...b,
+      trigger: b.trigger || saved?.trigger || existing?.trigger || policyTrigger || TRIGGERS[0],
+      controlledActions: branchActions,
+      controlledAction: branchActions[0] || "",
+    };
+  });
+}
+
+function ConfiguratorModeSwitcher({ mode, onChange, insetLeft = "1.5rem" }) {
+  return (
+    <div className="fixed bottom-6 z-50" style={{ left: insetLeft }}>
+      <div className="flex items-center gap-1 rounded-xl border bg-white/95 p-1 shadow-lg backdrop-blur-sm">
+        {CONFIG_MODES.map((m) => {
+          const active = mode === m.id;
+          return (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => onChange(m.id)}
+              className={cn(
+                "rounded-lg px-3 py-2 text-xs font-medium transition-colors",
+                active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              {m.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function OutcomeWithAction({ outcome, controlledAction, controlledActions }) {
+  const actions = controlledActions?.length
+    ? controlledActions
+    : (controlledAction ? [controlledAction] : []);
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
       <Badge variant={outcomeVariant(outcome)}>{outcome}</Badge>
-      {controlledAction && (
+      {actions.length > 0 && (
         <span className="text-xs text-muted-foreground">
-          on <span className="font-medium text-foreground">{controlledAction}</span>
+          on <span className="font-medium text-foreground">{formatControlledActionsList(actions)}</span>
         </span>
       )}
     </span>
@@ -226,7 +316,8 @@ const POLICY_SOURCE = {
 };
 
 const POLICIES_SEED = [
-  { id: "p1", name: "EU Recording Restriction", type: "Guardrail", domain: "Talent Acquisition", fn: "Interview Intelligence", scope: ["EMEA GDPR Candidates", "Current Employees"], scopeInline: true, status: "Active", personas: ["Candidate", "Interviewer"], trigger: "At scheduling", applicability: { location: "EU / GDPR Countries" }, source: POLICY_SOURCE.RECORDING, controlledAction: "Interview Recording" },
+  { id: "p22", name: "Interview Feature Restriction", type: "Guardrail", domain: "Hiring Intelligence", fn: "Interview Intelligence", scope: [], status: "Active", personas: ["Candidate", "Interviewer"], trigger: "At scheduling", source: POLICY_SOURCE.RECORDING, controlledAction: "Interview Recording" },
+  { id: "p1", name: "EU Recording Restriction", type: "Guardrail", domain: "Hiring Intelligence", fn: "Interview Intelligence", scope: ["EMEA GDPR Candidates", "Current Employees"], scopeInline: true, status: "Active", personas: ["Candidate", "Interviewer"], trigger: "At scheduling", applicability: { location: "EU / GDPR Countries" }, source: POLICY_SOURCE.RECORDING, controlledAction: "Interview Recording" },
   { id: "p2", name: "No-Poach Tier 1 Block", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Protected Client No-Poach Tier 1"], status: "Active", personas: ["Recruiter"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression" },
 
   // ---- EPFO / India verification policies (spreadsheet) ----
@@ -251,7 +342,7 @@ const POLICIES_SEED = [
 ];
 
 const WORKFLOWS_SEED = [
-  { id: "wf-1", name: "Interview Scheduling Flow", type: "Workflow", stage: "Pre-Interview", status: "Active", policies: ["p1"] },
+  { id: "wf-1", name: "Interview Scheduling Flow", type: "Workflow", stage: "Pre-Interview", status: "Active", policies: ["p22", "p1"] },
   { id: "wf-2", name: "Candidate Sourcing Pipeline", type: "Pipeline", stage: "Sourcing", status: "Active", policies: ["p2", "p17", "p18", "p19", "p20", "p21"] },
   { id: "wf-4", name: "Offer Management Flow", type: "Workflow", stage: "Offer", status: "Active", policies: ["p2", "p12", "p13"] },
   { id: "wf-7", name: "India Application Compliance Screen", type: "Pipeline", stage: "Screening", status: "Active", policies: ["p8", "p9", "p10", "p11", "p16"] },
@@ -288,6 +379,7 @@ function formatActionLabel(action) {
 }
 
 const USAGE_METRICS_SEED = {
+  p22: { evaluations30d: 18640, matchRate: "52%", lastTriggered: "45 min ago", outcomeHits: 9693 },
   p1: { evaluations30d: 12480, matchRate: "68%", lastTriggered: "2 hours ago", outcomeHits: 8486 },
   p2: { evaluations30d: 43120, matchRate: "4.2%", lastTriggered: "12 min ago", outcomeHits: 1811 },
   p8: { evaluations30d: 28400, matchRate: "3.1%", lastTriggered: "6 min ago", outcomeHits: 880 },
@@ -462,13 +554,41 @@ function seedRuleForPolicy(existing, type) {
     ] };
   }
 
+  /* ---- Interview feature restrictions ---- */
+  if (name.includes("interview feature restriction")) {
+    return { branches: [
+      { kind: "IF",
+        groups: [[
+          { source: "Country / Region", operator: "EQUALS", value: "United States" },
+          { source: "Job Grade", operator: "IS IN", value: "Director+" },
+        ]],
+        outcome: outcome("Soft Stop"),
+        controlledActions: ["Interview Recording"],
+        reason: "For executive roles, recording must be approved by someone else before it can be enabled.",
+        requiresApproval: true,
+        approver: "Hiring Manager",
+      },
+      { kind: "ELSE IF", rows: [{ source: "Country / Region", operator: "EQUALS", value: "Germany" }],
+        outcome: outcome("Block"),
+        controlledActions: ["Interview Recording", "Interview Transcription"],
+        reason: "Everything related to interview recording is blocked in Germany.",
+      },
+      { kind: "ELSE IF", rows: [{ source: "Country / Region", operator: "EQUALS", value: "Spain" }],
+        outcome: outcome("Block"),
+        controlledActions: ["AI Interview Analysis"],
+        reason: "Only AI-generated interview insights are blocked in Spain.",
+      },
+      { kind: "ELSE", outcome: outcome("Allow"), controlledActions: [] },
+    ] };
+  }
+
   /* ---- Original demo policies ---- */
   if (name.includes("recording restriction")) {
     return { branches: [
       { kind: "IF", rows: [{ source: "Country / Region", operator: "IS IN", value: "EU / GDPR Countries" }],
-        outcome: outcome("Block"),
+        outcome: outcome("Block"), controlledAction: "Interview Recording",
         notifications: [{ persona: "Interviewer", template: NOTIFY_TEMPLATES[0] }] },
-      { kind: "ELSE", outcome: outcome("Allow") },
+      { kind: "ELSE", outcome: outcome("Allow"), controlledAction: "Interview Recording" },
     ] };
   }
   if (name.includes("fit-score") || name.includes("fast track")) {
@@ -545,8 +665,8 @@ function normalizeText(value) {
   return String(value || "").trim().toLowerCase();
 }
 
-function ScopeSummary({ scopeBlocks, applicability }) {
-  const appChips = activeApplicability(applicability);
+function ScopeSummary({ scopeBlocks, applicability, groupsOnly = false }) {
+  const appChips = groupsOnly ? [] : activeApplicability(applicability);
   if (!appChips.length && !scopeBlocks.length) return <Badge variant="secondary">Global</Badge>;
   return (
     <div className="flex flex-wrap items-center gap-1.5">
@@ -717,6 +837,83 @@ function SimpleSelect({ value, onChange, options, placeholder, labels = {} }) {
   );
 }
 
+function MultiSelectChips({ value = [], onChange, options, labels = {}, placeholder = "Select…", variant = "default" }) {
+  const selected = Array.isArray(value) ? value : (value ? [value] : []);
+  const matchSelect = variant === "select";
+
+  function toggle(option) {
+    if (selected.includes(option)) onChange(selected.filter((item) => item !== option));
+    else onChange([...selected, option]);
+  }
+
+  function removeChip(option, event) {
+    event.preventDefault();
+    event.stopPropagation();
+    onChange(selected.filter((item) => item !== option));
+  }
+
+  const selectedLabel = selected.map((option) => labels[option] || option).join(", ");
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            matchSelect
+              ? "flex h-auto min-h-10 w-full items-center justify-between gap-2 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm ring-offset-background focus:outline-none focus:ring-1 focus:ring-ring"
+              : "flex min-h-10 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+          )}
+        >
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+            {selected.length === 0 ? (
+              <span className="text-muted-foreground">{placeholder}</span>
+            ) : matchSelect ? (
+              <span className="truncate text-sm font-medium">{selectedLabel}</span>
+            ) : (
+              selected.map((option) => (
+                <Badge key={option} variant="secondary" className="gap-1 pr-1 font-normal">
+                  {labels[option] || option}
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(event) => removeChip(option, event)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") removeChip(option, event);
+                    }}
+                    className="rounded-sm text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-3 w-3" />
+                  </span>
+                </Badge>
+              ))
+            )}
+          </div>
+          <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)]">
+        {options.map((option) => {
+          const active = selected.includes(option);
+          return (
+            <DropdownMenuItem
+              key={option}
+              onSelect={(event) => {
+                event.preventDefault();
+                toggle(option);
+              }}
+              className="flex items-center justify-between gap-2"
+            >
+              <span>{labels[option] || option}</span>
+              {active && <Check className="h-4 w-4 text-primary" />}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 function outcomeToneBoxClass(tone) {
   const map = {
     emerald: "border-emerald-200 bg-emerald-50 text-emerald-700",
@@ -729,8 +926,18 @@ function outcomeToneBoxClass(tone) {
   return map[tone] || map.slate;
 }
 
-function OutcomeOptionContent({ outcome }) {
+function OutcomeOptionContent({ outcome, compact = false }) {
   const Icon = outcome.icon || CheckCircle;
+  if (compact) {
+    return (
+      <div className="flex items-center gap-2 text-left">
+        <div className={cn("flex h-6 w-6 shrink-0 items-center justify-center rounded border", outcomeToneBoxClass(outcome.tone))}>
+          <Icon className="h-3 w-3" />
+        </div>
+        <p className="text-sm font-medium leading-tight">{outcome.key}</p>
+      </div>
+    );
+  }
   return (
     <div className="flex items-start gap-3 text-left">
       <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-md border", outcomeToneBoxClass(outcome.tone))}>
@@ -746,13 +953,13 @@ function OutcomeOptionContent({ outcome }) {
   );
 }
 
-function OutcomeSelect({ outcomes, value, onChange }) {
+function OutcomeSelect({ outcomes, value, onChange, compactTrigger = false }) {
   const selected = outcomes.find((o) => o.key === value);
   return (
     <Select value={value || undefined} onValueChange={onChange}>
-      <SelectTrigger className="h-auto min-h-10 py-2.5">
+      <SelectTrigger className={cn("h-auto min-h-10 shadow-sm", compactTrigger ? "py-2" : "py-2.5")}>
         {selected ? (
-          <OutcomeOptionContent outcome={selected} />
+          <OutcomeOptionContent outcome={selected} compact={compactTrigger} />
         ) : (
           <SelectValue placeholder="Select outcome…" />
         )}
@@ -861,7 +1068,7 @@ function ConditionRows({ rows, orGate, setOrGate, onUpdateRow, onRemoveRow, onAd
           </div>
         </div>
       ))}
-      <div className="mt-2">
+      <div className="mt-3">
         <Button type="button" variant="link" size="sm" className="h-auto px-0 py-1 text-xs" onClick={onAddRow}>
           <Plus className="h-3.5 w-3.5" /> Add condition
         </Button>
@@ -877,6 +1084,9 @@ function createBranch(type, partial = {}) {
     groups: [{ id: uid++, rows: [{ id: uid++, source: DATA_SOURCES[0], operator: "IS IN", value: "" }] }],
     orGate: false,
     outcome: type.outcomes[0].key,
+    trigger: TRIGGERS[0],
+    controlledAction: "",
+    controlledActions: [],
     reason: "",
     requiresApproval: false,
     approver: APPROVERS[0],
@@ -897,6 +1107,9 @@ function seedBranch(type, spec) {
     groups,
     orGate: spec.orGate || false,
     outcome: spec.outcome || type.outcomes[0].key,
+    trigger: spec.trigger || TRIGGERS[0],
+    controlledActions: spec.controlledActions || (spec.controlledAction ? [spec.controlledAction] : []),
+    controlledAction: spec.controlledAction || spec.controlledActions?.[0] || "",
     reason: spec.reason || "",
     requiresApproval: spec.requiresApproval || false,
     approver: spec.approver || APPROVERS[0],
@@ -1138,11 +1351,11 @@ function ConditionGroupBuilder({ groups, setGroups, orGate, setOrGate, singleGro
   function removeGroup(gid) { if (groups.length > 1) setGroups(groups.filter((g) => g.id !== gid)); }
 
   return (
-    <div className="space-y-0">
+    <div className="space-y-3">
       {groups.map((g, gi) => (
         <div key={g.id}>
           {gi > 0 && (
-            <div className="flex py-2">
+            <div className="flex pb-3">
               <ConditionGateLabel staticLabel showToggle={false} />
             </div>
           )}
@@ -1169,11 +1382,9 @@ function ConditionGroupBuilder({ groups, setGroups, orGate, setOrGate, singleGro
         </div>
       ))}
       {!singleGroup && (
-        <div className="mt-3">
-          <Button type="button" variant="outline" className="w-full border-dashed" onClick={addGroup}>
-            <Plus className="h-3.5 w-3.5" /> Add condition group
-          </Button>
-        </div>
+        <Button type="button" variant="outline" className="w-full border-dashed" onClick={addGroup}>
+          <Plus className="h-3.5 w-3.5" /> Add condition group
+        </Button>
       )}
     </div>
   );
@@ -1314,6 +1525,7 @@ function AppSidebar({ view, setView, setEditingId, collapsed, setCollapsed }) {
 
 export default function PolicyLibraryApp() {
   const [view, setView] = useState("library");
+  const [configMode, setConfigMode] = useState("policy");
   const [policies, setPolicies] = useState(POLICIES_SEED);
   const [audiences, setAudiences] = useState(AUDIENCES_SEED);
   const [taxonomy, setTaxonomy] = useState(TAXONOMY_SEED);
@@ -1375,11 +1587,18 @@ export default function PolicyLibraryApp() {
             audiences={audiences}
             setAudiences={setAudiences}
             taxonomy={taxonomy}
+            configMode={configMode}
             onExit={() => { setView("library"); setEditingId(null); }}
             showToast={showToast}
           />
         )}
       </main>
+
+      <ConfiguratorModeSwitcher
+        mode={configMode}
+        onChange={setConfigMode}
+        insetLeft={inBuilder ? "1.5rem" : sidebarCollapsed ? "4.5rem" : "17.5rem"}
+      />
 
       {toast && (
         <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm text-primary-foreground shadow-lg">
@@ -1754,15 +1973,19 @@ const SAMPLE_DOCS = [
   "Interview_Intelligence_SOP.pdf",
 ];
 
-function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, onExit, showToast }) {
+function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, configMode, onExit, showToast }) {
   const existing = policies.find((p) => p.id === policyId);
   const [activeTab, setActiveTab] = useState("context");
   const [configSection, setConfigSection] = useState("general");
   const [name, setName] = useState(existing?.name || "Untitled Policy");
   const [status, setStatus] = useState(existing?.status || "Draft");
-  const [description, setDescription] = useState(existing?.name === "EU Recording Restriction"
-    ? "Block interview recording for candidates in GDPR jurisdictions and notify interviewers when recording is disabled."
-    : "");
+  const [description, setDescription] = useState(
+    existing?.name === "EU Recording Restriction"
+      ? "Block interview recording for candidates in GDPR jurisdictions and notify interviewers when recording is disabled."
+      : existing?.name === "Interview Feature Restriction"
+        ? "Country-specific rules for interview recording and AI insights: soft stop with approval for US executive roles, full recording block in Germany, and AI insights block in Spain."
+        : "",
+  );
 
   const [aiPrompt, setAiPrompt] = useState(existing
     ? `Maintain a ${existing.type.toLowerCase()} policy for ${existing.fn} that ${existing.name.toLowerCase().includes("block") ? "blocks" : "controls"} the relevant workflow step.`
@@ -1784,7 +2007,31 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, onE
 
   const [scopeBlocks, setScopeBlocks] = useState(() => initScopeBlocks(existing));
 
-  const [branches, setBranches] = useState(() => branchesFromSeed(type, seededRule));
+  const [branches, setBranches] = useState(() => hydrateBranchesForMode(
+    branchesFromSeed(type, seededRule),
+    { existing, fn, policyControlledAction: defaultControlledAction(existing), policyTrigger: existing?.trigger || TRIGGERS[0], configMode },
+  ));
+
+  const controlledActionOptions = getControlledActionOptions(fn);
+
+  function syncBranchesForMode(nextMode) {
+    if (nextMode === "rule") {
+      setBranches((prev) => prev.map((b) => ({
+        ...b,
+        trigger: b.trigger || trigger,
+        controlledActions: getBranchControlledActions(b, controlledAction).length
+          ? getBranchControlledActions(b, controlledAction)
+          : defaultBranchControlledActions(fn, controlledAction, b.outcome),
+        controlledAction: (getBranchControlledActions(b, controlledAction)[0]
+          || defaultBranchControlledActions(fn, controlledAction, b.outcome)[0]
+          || ""),
+      })));
+    }
+  }
+
+  useEffect(() => {
+    syncBranchesForMode(configMode);
+  }, [configMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const linkedWorkflows = WORKFLOWS_SEED.filter((w) => w.policies.includes(existing?.id));
 
@@ -1822,7 +2069,20 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, onE
   function publish() {
     const scope = scopeBlocks.filter((b) => b.type === "audience").map((b) => b.audienceName);
     const scopeInline = scopeBlocks.some((b) => b.type === "custom");
-    const record = { id: existing?.id || `p${uid++}`, name, type: typeKey, domain, fn, scope, scopeInline, status, personas, trigger, controlledAction, applicability, source: existing?.source };
+    const base = { id: existing?.id || `p${uid++}`, name, type: typeKey, domain, fn, scope, scopeInline, status, personas, applicability, source: existing?.source, configMode };
+    const record = configMode === "rule"
+      ? {
+          ...base,
+          trigger: branches[0]?.trigger || trigger,
+          branchSettings: branches.map((b, index) => ({
+            index,
+            kind: b.kind,
+            trigger: b.trigger,
+            controlledAction: b.controlledAction,
+            controlledActions: getBranchControlledActions(b),
+          })),
+        }
+      : { ...base, trigger, controlledAction };
     if (existing) setPolicies(policies.map((p) => p.id === record.id ? record : p));
     else setPolicies([...policies, record]);
     showToast(existing ? "Policy updated" : "Policy created");
@@ -1842,6 +2102,9 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, onE
             </Button>
             <Input value={name} onChange={(e) => setName(e.target.value)}
               className="h-auto min-w-0 max-w-[min(36vw,28rem)] border-0 bg-transparent px-0 text-2xl font-semibold tracking-[-0.03em] shadow-none focus-visible:ring-0" />
+            <Badge variant="outline" className="shrink-0 text-[10px] font-normal">
+              {CONFIG_MODES.find((m) => m.id === configMode)?.label}
+            </Badge>
           </div>
 
           <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
@@ -1891,11 +2154,12 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, onE
             generating={generating} generateFromAI={generateFromAI} aiGenerated={aiGenerated}
             name={name} typeKey={typeKey} domain={domain} fn={fn} scopeLabel={scopeLabel}
             personas={personas} branches={branches} type={type} trigger={trigger} controlledAction={controlledAction}
+            configMode={configMode}
             description={description} onEditConfig={() => setActiveTab("configuration")}
           />
         )}
 
-        {activeTab === "configuration" && (
+        {activeTab === "configuration" && configMode === "policy" && (
           <ConfigurationTab
             configSection={configSection} setConfigSection={setConfigSection}
             typeKey={typeKey} setTypeKey={setTypeKey} type={type} setBranches={setBranches}
@@ -1903,6 +2167,20 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, onE
             description={description} setDescription={setDescription}
             personas={personas} trigger={trigger} setTrigger={setTrigger}
             controlledAction={controlledAction} setControlledAction={setControlledAction}
+            applicability={applicability} setApplicability={setApplicability}
+            scopeBlocks={scopeBlocks} setScopeBlocks={setScopeBlocks}
+            audiences={audiences}
+            branches={branches} addElseIf={addElseIf} removeBranch={removeBranch} updateBranch={updateBranch}
+          />
+        )}
+
+        {activeTab === "configuration" && configMode === "rule" && (
+          <ConfigurationTabRuleLevel
+            configSection={configSection} setConfigSection={setConfigSection}
+            typeKey={typeKey} setTypeKey={setTypeKey} type={type} setBranches={setBranches}
+            domain={domain} setDomain={setDomain} fn={fn} setFn={setFn} taxonomy={taxonomy}
+            description={description} setDescription={setDescription}
+            personas={personas}
             applicability={applicability} setApplicability={setApplicability}
             scopeBlocks={scopeBlocks} setScopeBlocks={setScopeBlocks}
             audiences={audiences}
@@ -1921,7 +2199,7 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, onE
 /* ---------------- Context tab (AI-first) ---------------- */
 
 function ContextTab({ aiPrompt, setAiPrompt, documents, addDocument, removeDocument, generating, generateFromAI, aiGenerated,
-  name, typeKey, domain, fn, scopeLabel, personas, branches, type, trigger, controlledAction, description, onEditConfig }) {
+  name, typeKey, domain, fn, scopeLabel, personas, branches, type, trigger, controlledAction, configMode, description, onEditConfig }) {
   const availableDocs = SAMPLE_DOCS.filter((d) => !documents.includes(d));
 
   return (
@@ -2010,46 +2288,54 @@ function ContextTab({ aiPrompt, setAiPrompt, documents, addDocument, removeDocum
               </div>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-1">
-              <div className="rounded-lg border bg-background p-3.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-                <span className="text-xs text-muted-foreground">Type</span>
-                <div className="mt-1.5"><Badge variant="outline">{typeKey}</Badge></div>
+            <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-1">
+              <div className="flex items-center gap-2 rounded-lg border bg-background px-3 py-2 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+                <span className="shrink-0 text-xs text-muted-foreground">Type</span>
+                <Badge variant="outline" className="ml-auto">{typeKey}</Badge>
               </div>
-              <div className="rounded-lg border bg-background p-3.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-                <span className="text-xs text-muted-foreground">Trigger</span>
-                <p className="mt-1.5 text-sm">{trigger}</p>
+              <div className="flex items-center gap-2 rounded-lg border bg-background px-3 py-2 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+                <span className="shrink-0 text-xs text-muted-foreground">Function</span>
+                <span className="ml-auto truncate text-right text-sm">{domain} → {fn}</span>
               </div>
-              <div className="rounded-lg border bg-background p-3.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-                <span className="text-xs text-muted-foreground">Function</span>
-                <p className="mt-1.5 text-sm">{domain} → {fn}</p>
-              </div>
-              <div className="rounded-lg border bg-background p-3.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-                <span className="text-xs text-muted-foreground">Controlled action</span>
-                <p className="mt-1.5 text-sm">{controlledAction || "—"}</p>
-              </div>
-              <div className="rounded-lg border bg-background p-3.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-                <span className="text-xs text-muted-foreground">Scope</span>
-                <p className="mt-1.5 text-sm">{scopeLabel}</p>
+              {configMode === "policy" && (
+                <>
+                  <div className="flex items-center gap-2 rounded-lg border bg-background px-3 py-2 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+                    <span className="shrink-0 text-xs text-muted-foreground">Trigger</span>
+                    <span className="ml-auto truncate text-right text-sm">{trigger}</span>
+                  </div>
+                  <div className="flex items-center gap-2 rounded-lg border bg-background px-3 py-2 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+                    <span className="shrink-0 text-xs text-muted-foreground">Action</span>
+                    <span className="ml-auto truncate text-right text-sm">{controlledAction || "—"}</span>
+                  </div>
+                </>
+              )}
+              <div className="flex items-center gap-2 rounded-lg border bg-background px-3 py-2 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+                <span className="shrink-0 text-xs text-muted-foreground">Scope</span>
+                <span className="ml-auto truncate text-right text-sm">{scopeLabel}</span>
               </div>
             </div>
 
             {personas.length > 0 && (
-              <div>
-                <span className="text-xs text-muted-foreground">Affected personas</span>
-                <div className="mt-1.5 flex flex-wrap gap-1.5">{personas.map((p) => <Badge key={p} variant="outline">{p}</Badge>)}</div>
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-background px-3 py-2 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+                <span className="shrink-0 text-xs text-muted-foreground">Personas</span>
+                <div className="ml-auto flex flex-wrap justify-end gap-1">{personas.map((p) => <Badge key={p} variant="outline">{p}</Badge>)}</div>
               </div>
             )}
 
             <div>
-              <span className="text-xs text-muted-foreground">What it does</span>
+              <span className="text-xs text-muted-foreground">{configMode === "rule" ? "Rules" : "What it does"}</span>
               <div className="mt-2 space-y-2">
                 {branches.map((b) => (
                   <div key={b.id} className="flex items-start gap-2.5 text-sm">
                     <span className="mt-0.5 w-14 shrink-0 text-xs text-muted-foreground">{b.kind}</span>
                     <div className="flex-1">
+                      {configMode === "rule" && getBranchControlledActions(b).length > 0 && (
+                        <p className="mb-0.5 text-[11px] text-muted-foreground">{formatControlledActionsList(getBranchControlledActions(b))}</p>
+                      )}
                       {b.kind !== "ELSE" && b.groups?.flatMap((g) => g.rows).filter((r) => r.value).length > 0 ? (
                         <span className="text-muted-foreground">
-                          When {b.groups.flatMap((g) => g.rows).filter((r) => r.value).map((r) => `${r.source} ${r.operator} "${r.value}"`).join(" and ")}
+                          {configMode === "policy" ? "When " : ""}
+                          {b.groups.flatMap((g) => g.rows).filter((r) => r.value).map((r) => `${r.source} ${r.operator} "${r.value}"`).join(" and ")}
                         </span>
                       ) : b.kind === "ELSE" ? (
                         <span className="text-muted-foreground">Otherwise</span>
@@ -2057,7 +2343,11 @@ function ContextTab({ aiPrompt, setAiPrompt, documents, addDocument, removeDocum
                         <span className="italic text-muted-foreground">Conditions not set</span>
                       )}
                       <span className="mx-1.5 text-muted-foreground">→</span>
-                      <OutcomeWithAction outcome={b.outcome} controlledAction={controlledAction} />
+                      <OutcomeWithAction
+                        outcome={b.outcome}
+                        controlledActions={configMode === "rule" ? getBranchControlledActions(b) : undefined}
+                        controlledAction={configMode === "policy" ? controlledAction : undefined}
+                      />
                       {b.requiresApproval && (
                         <span className="ml-2 text-xs text-amber-700">needs {b.approver} approval{b.deferToStage ? ` · enforce at ${b.deferToStage}` : ""}</span>
                       )}
@@ -2301,6 +2591,208 @@ function ConfigurationTab({ configSection, setConfigSection, typeKey, setTypeKey
                       </div>
                       {b.reason && <p className="pl-1 text-xs italic text-muted-foreground">“{b.reason}”</p>}
                     </div>
+                ))}
+              </div>
+            </div>
+          </SectionCard>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Configuration tab — rule-level variant ---------------- */
+
+function ConfigurationTabRuleLevel({ configSection, setConfigSection, typeKey, setTypeKey, type, setBranches,
+  domain, setDomain, fn, setFn, taxonomy, description, setDescription, personas,
+  applicability, setApplicability,
+  scopeBlocks, setScopeBlocks, audiences,
+  branches, addElseIf, removeBranch, updateBranch }) {
+  const controlledActionOptions = getControlledActionOptions(fn);
+
+  function changeDomain(nextDomain) {
+    const nextFn = taxonomy[nextDomain][0];
+    setDomain(nextDomain);
+    changeFn(nextFn);
+  }
+
+  function changeFn(nextFn) {
+    setFn(nextFn);
+    const options = getControlledActionOptions(nextFn);
+    setBranches((prev) => prev.map((b) => {
+      const nextActions = (b.controlledActions || []).filter((action) => options.includes(action));
+      return {
+        ...b,
+        controlledActions: nextActions,
+        controlledAction: nextActions[0] || "",
+      };
+    }));
+  }
+
+  return (
+    <div className="flex min-h-[calc(100vh-180px)]">
+      <div className="w-52 shrink-0 border-r bg-background py-4">
+        <p className="mb-2 px-4 text-xs font-medium text-muted-foreground">Sections</p>
+        <nav className="space-y-1 px-2">
+          {CONFIG_SECTIONS.map((s) => {
+            const Icon = s.icon;
+            const active = configSection === s.id;
+            return (
+              <Button key={s.id} variant="ghost"
+                className={cn("w-full justify-start gap-2.5 font-normal", active && SELECTED_CHIP_CLASSES)}
+                onClick={() => setConfigSection(s.id)}>
+                <Icon className="h-4 w-4" /> {s.label}
+              </Button>
+            );
+          })}
+        </nav>
+      </div>
+
+      <div className="max-w-4xl flex-1 overflow-auto px-6 py-6">
+        {configSection === "general" && (
+          <SectionCard title="General" subtitle="Type, taxonomy, and description" icon={FileText}>
+            <Field label="Policy type" hint="Determines allowed outcomes in Rules">
+              <div className="grid grid-cols-4 gap-2">
+                {POLICY_TYPES.map((t) => {
+                  const Icon = t.icon;
+                  const active = typeKey === t.key;
+                  return (
+                    <button key={t.key} onClick={() => { setTypeKey(t.key); setBranches([
+                      createBranch(t, { kind: "IF" }),
+                      createBranch(t, { kind: "ELSE", outcome: t.outcomes[t.outcomes.length - 1].key }),
+                    ]); }}
+                      className={cn("flex flex-col items-center gap-1.5 rounded-lg border p-3 text-center transition-colors",
+                        active ? SELECTED_CHIP_CLASSES : "hover:border-muted-foreground/40")}>
+                      <Icon className={cn("h-4 w-4", active ? "text-primary" : "text-muted-foreground")} />
+                      <span className={cn("text-xs font-semibold", active ? "text-primary" : "text-foreground")}>{t.key}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-2 text-[11px] text-muted-foreground">{type.description}</p>
+            </Field>
+
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Product Experience">
+                <SimpleSelect value={domain} onChange={changeDomain} options={Object.keys(taxonomy)} />
+              </Field>
+              <Field label="Product">
+                <SimpleSelect value={fn} onChange={changeFn} options={taxonomy[domain] || []} />
+              </Field>
+            </div>
+
+            <Field label="Description">
+              <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
+            </Field>
+          </SectionCard>
+        )}
+
+        {configSection === "scope" && (
+          <SectionCard title="Scope" subtitle="Audience groups and custom conditions — combined with AND" icon={MapPin}>
+            <ScopeBuilder scopeBlocks={scopeBlocks} setScopeBlocks={setScopeBlocks} audiences={audiences} />
+          </SectionCard>
+        )}
+
+        {configSection === "rules" && (
+          <SectionCard title="Rules" subtitle={`Conditions and outcomes per branch · ${typeKey}`} icon={GitBranch}>
+            {branches.map((b, bi) => (
+              <div key={b.id}>
+                <div className="overflow-hidden rounded-lg border">
+                  <div className="flex items-center justify-between border-b bg-muted/50 px-3.5 py-2">
+                    <Badge variant={branchVariant(b.kind)}>{b.kind}</Badge>
+                    {b.kind === "ELSE IF" && (
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => removeBranch(b.id)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                  <div className="space-y-3.5 p-3.5">
+                    {b.kind !== "ELSE" && (
+                      <ConditionGroupBuilder
+                        groups={b.groups}
+                        setGroups={(g) => updateBranch(b.id, { groups: g })}
+                        orGate={b.orGate}
+                        setOrGate={(v) => updateBranch(b.id, { orGate: v })}
+                      />
+                    )}
+                    <Field label={`Outcome (${typeKey})`}>
+                      <div className="grid grid-cols-2 gap-3">
+                        <OutcomeSelect
+                          outcomes={type.outcomes}
+                          value={b.outcome}
+                          onChange={(v) => updateBranch(b.id, { outcome: v })}
+                          compactTrigger
+                        />
+                        <MultiSelectChips
+                          value={getBranchControlledActions(b)}
+                          onChange={(actions) => updateBranch(b.id, {
+                            controlledActions: actions,
+                            controlledAction: actions[0] || "",
+                          })}
+                          options={controlledActionOptions}
+                          labels={CONTROLLED_ACTION_LABELS}
+                          placeholder="Select features…"
+                          variant="select"
+                        />
+                      </div>
+                    </Field>
+                    <BranchEnforcementEditor branch={b} onChange={(patch) => updateBranch(b.id, patch)} />
+                    <BranchActionsEditor branch={b} type={type} onChange={(actions) => updateBranch(b.id, { actions })} />
+                    <BranchNotificationsEditor branch={b} onChange={(notifications) => updateBranch(b.id, { notifications })} />
+                  </div>
+                </div>
+                {bi < branches.length - 1 && (
+                  <div className="flex items-center justify-center py-1.5 text-xs text-muted-foreground">
+                    <ArrowRight className="mr-1 h-3 w-3 rotate-90" /> if no match, continue
+                  </div>
+                )}
+              </div>
+            ))}
+            <Button variant="outline" className="w-full border-dashed" onClick={addElseIf}>
+              <Plus className="h-3.5 w-3.5" /> Add ELSE IF branch
+            </Button>
+          </SectionCard>
+        )}
+
+        {configSection === "summary" && (
+          <SectionCard title="Summary" subtitle="What this policy will do once published" icon={FileText}>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div><span className="mb-1 block text-xs text-muted-foreground">Type</span><Badge variant="outline">{typeKey}</Badge></div>
+              <div><span className="mb-1 block text-xs text-muted-foreground">Product</span><span>{domain} <ChevronRight className="inline h-3 w-3 opacity-50" /> {fn}</span></div>
+              <div><span className="mb-1 block text-xs text-muted-foreground">Configurator</span><Badge variant="secondary">V2</Badge></div>
+              <div><span className="mb-1 block text-xs text-muted-foreground">Personas</span>
+                {personas.length ? <div className="flex flex-wrap gap-1">{personas.map((p) => <Badge key={p} variant="outline">{p}</Badge>)}</div> : <span className="text-xs text-muted-foreground">Not set — derived at outcome level</span>}
+              </div>
+              <div className="col-span-2"><span className="mb-1 block text-xs text-muted-foreground">Scope</span>
+                <ScopeSummary scopeBlocks={scopeBlocks} applicability={applicability} groupsOnly />
+              </div>
+            </div>
+            <Separator />
+            <div>
+              <span className="mb-2 block text-xs text-muted-foreground">Branches ({branches.length})</span>
+              <div className="space-y-2.5">
+                {branches.map((b) => (
+                  <div key={b.id} className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <Badge variant={branchVariant(b.kind)}>{b.kind}</Badge>
+                      <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                      <OutcomeWithAction outcome={b.outcome} controlledActions={getBranchControlledActions(b)} />
+                      {b.requiresApproval && (
+                        <Badge variant="outline" className="gap-1 border-amber-200 bg-amber-50 text-amber-700">
+                          <Check className="h-3 w-3" /> {b.approver} approval{b.deferToStage ? ` · enforce at ${b.deferToStage}` : ""}
+                        </Badge>
+                      )}
+                      {b.actions?.map((action) => (
+                        <Badge key={normalizeAction(action).id} variant="secondary">{formatActionLabel(action)}</Badge>
+                      ))}
+                      {b.notifications?.map((notification) => (
+                        <span key={notification.id} className="flex items-center gap-1 text-muted-foreground">
+                          <Bell className="h-3 w-3" />{notification.persona} · {notification.template}
+                        </span>
+                      ))}
+                    </div>
+                    {b.reason && <p className="pl-1 text-xs italic text-muted-foreground">“{b.reason}”</p>}
+                  </div>
                 ))}
               </div>
             </div>
