@@ -117,6 +117,42 @@ const ENFORCEMENT_STAGES = ["Immediate", "Application", "Screening", "Interview"
 // Approvers for human-in-the-loop escalation gates.
 const APPROVERS = ["Legal", "Compliance Reviewer", "HRBP", "Talent Leadership"];
 
+// The specific capability or workflow action this policy gates (e.g. "Interview Recording").
+const CONTROLLED_ACTIONS_BY_FN = {
+  "Interview Intelligence": ["Interview Recording", "Interview Scheduling", "Interview Transcription", "AI Interview Analysis"],
+  "Screening": ["Application Submission", "Application Progression", "Background Check Initiation", "Screening Decision"],
+  "Sourcing": ["Candidate Sourcing", "Automated Outreach", "Application Progression", "No-Poach Restriction Level", "Job Publish"],
+  "Offer Management": ["Offer Release", "Offer Acceptance", "Offer Progression"],
+  "Data Privacy": ["Candidate Sourcing", "Data Processing", "Consent Collection"],
+  "Compensation": ["Compensation Approval"],
+  "Benefits": ["Benefits Enrollment"],
+  "EEOC": ["Application Progression"],
+  "Background Check": ["Background Check Initiation"],
+};
+
+function getControlledActionOptions(fn) {
+  return CONTROLLED_ACTIONS_BY_FN[fn] || ["Workflow Step"];
+}
+
+function defaultControlledAction(existing) {
+  if (existing?.controlledAction) return existing.controlledAction;
+  const options = getControlledActionOptions(existing?.fn);
+  return options[0] || "";
+}
+
+function OutcomeWithAction({ outcome, controlledAction }) {
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      <Badge variant={outcomeVariant(outcome)}>{outcome}</Badge>
+      {controlledAction && (
+        <span className="text-xs text-muted-foreground">
+          on <span className="font-medium text-foreground">{controlledAction}</span>
+        </span>
+      )}
+    </span>
+  );
+}
+
 // Structured applicability (tenant / location / job family / job grade) layered on top of audiences.
 const APPLICABILITY = {
   tenant: { label: "Tenant / Business Unit", any: "All tenants", options: ["All tenants", "Acme India", "Acme EMEA", "Acme APAC", "Acme Global"] },
@@ -190,28 +226,28 @@ const POLICY_SOURCE = {
 };
 
 const POLICIES_SEED = [
-  { id: "p1", name: "EU Recording Restriction", type: "Guardrail", domain: "Talent Acquisition", fn: "Interview Intelligence", scope: ["EMEA GDPR Candidates", "Current Employees"], scopeInline: true, status: "Active", personas: ["Candidate", "Interviewer"], trigger: "At scheduling", applicability: { location: "EU / GDPR Countries" }, source: POLICY_SOURCE.RECORDING },
-  { id: "p2", name: "No-Poach Tier 1 Block", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Protected Client No-Poach Tier 1"], status: "Active", personas: ["Recruiter"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY },
+  { id: "p1", name: "EU Recording Restriction", type: "Guardrail", domain: "Talent Acquisition", fn: "Interview Intelligence", scope: ["EMEA GDPR Candidates", "Current Employees"], scopeInline: true, status: "Active", personas: ["Candidate", "Interviewer"], trigger: "At scheduling", applicability: { location: "EU / GDPR Countries" }, source: POLICY_SOURCE.RECORDING, controlledAction: "Interview Recording" },
+  { id: "p2", name: "No-Poach Tier 1 Block", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Protected Client No-Poach Tier 1"], status: "Active", personas: ["Recruiter"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression" },
 
   // ---- EPFO / India verification policies (spreadsheet) ----
-  { id: "p8", name: "Do-Not-Hire Employer Block", type: "Guardrail", domain: "Talent Acquisition", fn: "Screening", scope: ["India Applicants", "Do-Not-Hire Employers"], status: "Active", personas: ["Recruiter", "Compliance Reviewer"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY },
-  { id: "p9", name: "Do-Not-Hire Alias Match", type: "Guardrail", domain: "Talent Acquisition", fn: "Screening", scope: ["India Applicants", "Do-Not-Hire Employers"], status: "Active", personas: ["Recruiter"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY },
-  { id: "p10", name: "Resume vs UAN Mismatch", type: "Guardrail", domain: "Talent Acquisition", fn: "Screening", scope: ["India Applicants"], status: "Active", personas: ["Recruiter", "Compliance Reviewer"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY },
-  { id: "p11", name: "Rehire Performance Screen", type: "Guardrail", domain: "Talent Acquisition", fn: "Screening", scope: ["India Applicants", "Rehire Candidates"], status: "Active", personas: ["HRBP"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY },
+  { id: "p8", name: "Do-Not-Hire Employer Block", type: "Guardrail", domain: "Talent Acquisition", fn: "Screening", scope: ["India Applicants", "Do-Not-Hire Employers"], status: "Active", personas: ["Recruiter", "Compliance Reviewer"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Submission" },
+  { id: "p9", name: "Do-Not-Hire Alias Match", type: "Guardrail", domain: "Talent Acquisition", fn: "Screening", scope: ["India Applicants", "Do-Not-Hire Employers"], status: "Active", personas: ["Recruiter"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Submission" },
+  { id: "p10", name: "Resume vs UAN Mismatch", type: "Guardrail", domain: "Talent Acquisition", fn: "Screening", scope: ["India Applicants"], status: "Active", personas: ["Recruiter", "Compliance Reviewer"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Submission" },
+  { id: "p11", name: "Rehire Performance Screen", type: "Guardrail", domain: "Talent Acquisition", fn: "Screening", scope: ["India Applicants", "Rehire Candidates"], status: "Active", personas: ["HRBP"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression" },
 
   // ---- No-Poach program (spreadsheet, tiered) ----
-  { id: "p12", name: "No-Poach Tier 2 Cooling-Off", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["No-Poach Tier 2 Protected"], status: "Active", personas: ["Recruiter", "Compliance Reviewer"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY },
-  { id: "p13", name: "No-Poach Concealment Hard Stop", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Protected Client No-Poach Tier 1"], status: "Active", personas: ["Compliance Reviewer"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY },
-  { id: "p14", name: "No-Poach Alias & Subsidiary Match", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Protected Client No-Poach Tier 1"], status: "Active", personas: ["Recruiter"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY },
-  { id: "p15", name: "No-Poach MSA-Expiry Downgrade", type: "State Transition", domain: "Talent Acquisition", fn: "Sourcing", scope: [], status: "Active", personas: ["Compliance Reviewer"], trigger: "Continuous / scheduled", source: POLICY_SOURCE.INDIA_APPLY },
-  { id: "p16", name: "Rehire Protected-Client Review", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Rehire Candidates"], status: "Active", personas: ["Recruiter"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY },
+  { id: "p12", name: "No-Poach Tier 2 Cooling-Off", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["No-Poach Tier 2 Protected"], status: "Active", personas: ["Recruiter", "Compliance Reviewer"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression" },
+  { id: "p13", name: "No-Poach Concealment Hard Stop", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Protected Client No-Poach Tier 1"], status: "Active", personas: ["Compliance Reviewer"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression" },
+  { id: "p14", name: "No-Poach Alias & Subsidiary Match", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Protected Client No-Poach Tier 1"], status: "Active", personas: ["Recruiter"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression" },
+  { id: "p15", name: "No-Poach MSA-Expiry Downgrade", type: "State Transition", domain: "Talent Acquisition", fn: "Sourcing", scope: [], status: "Active", personas: ["Compliance Reviewer"], trigger: "Continuous / scheduled", source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "No-Poach Restriction Level" },
+  { id: "p16", name: "Rehire Protected-Client Review", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Rehire Candidates"], status: "Active", personas: ["Recruiter"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression" },
 
   // ---- Sourcing Agent policies (PDF 2) ----
-  { id: "p17", name: "Candidate Consent Gate", type: "Guardrail", domain: "Compliance", fn: "Data Privacy", scope: [], status: "Active", personas: ["Candidate"], trigger: "On candidate sourced", source: POLICY_SOURCE.SOURCING },
-  { id: "p18", name: "Current Employee Exclusion", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Current Employees"], status: "Active", personas: ["Recruiter"], trigger: "On candidate sourced", mandatory: true, source: POLICY_SOURCE.SOURCING },
-  { id: "p19", name: "Country Sourcing Restriction", type: "Guardrail", domain: "Compliance", fn: "Data Privacy", scope: [], status: "Active", personas: ["Recruiter"], trigger: "On candidate sourced", source: POLICY_SOURCE.SOURCING },
-  { id: "p20", name: "Job Family Suppression", type: "Routing", domain: "Talent Acquisition", fn: "Sourcing", scope: [], status: "Draft", personas: [], trigger: "On job publish", source: POLICY_SOURCE.SOURCING },
-  { id: "p21", name: "Rehire Cooling-Off", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Rehire Candidates"], status: "Active", personas: ["Recruiter"], trigger: "On candidate sourced", source: POLICY_SOURCE.SOURCING },
+  { id: "p17", name: "Candidate Consent Gate", type: "Guardrail", domain: "Compliance", fn: "Data Privacy", scope: [], status: "Active", personas: ["Candidate"], trigger: "On candidate sourced", source: POLICY_SOURCE.SOURCING, controlledAction: "Candidate Sourcing" },
+  { id: "p18", name: "Current Employee Exclusion", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Current Employees"], status: "Active", personas: ["Recruiter"], trigger: "On candidate sourced", mandatory: true, source: POLICY_SOURCE.SOURCING, controlledAction: "Candidate Sourcing" },
+  { id: "p19", name: "Country Sourcing Restriction", type: "Guardrail", domain: "Compliance", fn: "Data Privacy", scope: [], status: "Active", personas: ["Recruiter"], trigger: "On candidate sourced", source: POLICY_SOURCE.SOURCING, controlledAction: "Candidate Sourcing" },
+  { id: "p20", name: "Job Family Suppression", type: "Routing", domain: "Talent Acquisition", fn: "Sourcing", scope: [], status: "Draft", personas: [], trigger: "On job publish", source: POLICY_SOURCE.SOURCING, controlledAction: "Automated Sourcing" },
+  { id: "p21", name: "Rehire Cooling-Off", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Rehire Candidates"], status: "Active", personas: ["Recruiter"], trigger: "On candidate sourced", source: POLICY_SOURCE.SOURCING, controlledAction: "Candidate Sourcing" },
 ];
 
 const WORKFLOWS_SEED = [
@@ -428,7 +464,12 @@ function seedRuleForPolicy(existing, type) {
 
   /* ---- Original demo policies ---- */
   if (name.includes("recording restriction")) {
-    return { ...base, ifOutcome: outcome("Block"), elseOutcome: outcome("Allow"), notify: true };
+    return { branches: [
+      { kind: "IF", rows: [{ source: "Country / Region", operator: "IS IN", value: "EU / GDPR Countries" }],
+        outcome: outcome("Block"),
+        notifications: [{ persona: "Interviewer", template: NOTIFY_TEMPLATES[0] }] },
+      { kind: "ELSE", outcome: outcome("Allow") },
+    ] };
   }
   if (name.includes("fit-score") || name.includes("fast track")) {
     return {
@@ -1738,6 +1779,7 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, onE
   const [fn, setFn] = useState(existing?.fn || taxonomy[Object.keys(taxonomy)[0]][0]);
   const [personas, setPersonas] = useState(existing?.personas || []);
   const [trigger, setTrigger] = useState(existing?.trigger || TRIGGERS[0]);
+  const [controlledAction, setControlledAction] = useState(() => defaultControlledAction(existing));
   const [applicability, setApplicability] = useState({ ...defaultApplicability, ...(existing?.applicability || {}) });
 
   const [scopeBlocks, setScopeBlocks] = useState(() => initScopeBlocks(existing));
@@ -1780,7 +1822,7 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, onE
   function publish() {
     const scope = scopeBlocks.filter((b) => b.type === "audience").map((b) => b.audienceName);
     const scopeInline = scopeBlocks.some((b) => b.type === "custom");
-    const record = { id: existing?.id || `p${uid++}`, name, type: typeKey, domain, fn, scope, scopeInline, status, personas, trigger, applicability, source: existing?.source };
+    const record = { id: existing?.id || `p${uid++}`, name, type: typeKey, domain, fn, scope, scopeInline, status, personas, trigger, controlledAction, applicability, source: existing?.source };
     if (existing) setPolicies(policies.map((p) => p.id === record.id ? record : p));
     else setPolicies([...policies, record]);
     showToast(existing ? "Policy updated" : "Policy created");
@@ -1848,7 +1890,7 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, onE
             documents={documents} addDocument={addDocument} removeDocument={removeDocument}
             generating={generating} generateFromAI={generateFromAI} aiGenerated={aiGenerated}
             name={name} typeKey={typeKey} domain={domain} fn={fn} scopeLabel={scopeLabel}
-            personas={personas} branches={branches} type={type} trigger={trigger}
+            personas={personas} branches={branches} type={type} trigger={trigger} controlledAction={controlledAction}
             description={description} onEditConfig={() => setActiveTab("configuration")}
           />
         )}
@@ -1860,6 +1902,7 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, onE
             domain={domain} setDomain={setDomain} fn={fn} setFn={setFn} taxonomy={taxonomy}
             description={description} setDescription={setDescription}
             personas={personas} trigger={trigger} setTrigger={setTrigger}
+            controlledAction={controlledAction} setControlledAction={setControlledAction}
             applicability={applicability} setApplicability={setApplicability}
             scopeBlocks={scopeBlocks} setScopeBlocks={setScopeBlocks}
             audiences={audiences}
@@ -1878,7 +1921,7 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, onE
 /* ---------------- Context tab (AI-first) ---------------- */
 
 function ContextTab({ aiPrompt, setAiPrompt, documents, addDocument, removeDocument, generating, generateFromAI, aiGenerated,
-  name, typeKey, domain, fn, scopeLabel, personas, branches, type, trigger, description, onEditConfig }) {
+  name, typeKey, domain, fn, scopeLabel, personas, branches, type, trigger, controlledAction, description, onEditConfig }) {
   const availableDocs = SAMPLE_DOCS.filter((d) => !documents.includes(d));
 
   return (
@@ -1981,6 +2024,10 @@ function ContextTab({ aiPrompt, setAiPrompt, documents, addDocument, removeDocum
                 <p className="mt-1.5 text-sm">{domain} → {fn}</p>
               </div>
               <div className="rounded-lg border bg-background p-3.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+                <span className="text-xs text-muted-foreground">Controlled action</span>
+                <p className="mt-1.5 text-sm">{controlledAction || "—"}</p>
+              </div>
+              <div className="rounded-lg border bg-background p-3.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
                 <span className="text-xs text-muted-foreground">Scope</span>
                 <p className="mt-1.5 text-sm">{scopeLabel}</p>
               </div>
@@ -2010,7 +2057,7 @@ function ContextTab({ aiPrompt, setAiPrompt, documents, addDocument, removeDocum
                         <span className="italic text-muted-foreground">Conditions not set</span>
                       )}
                       <span className="mx-1.5 text-muted-foreground">→</span>
-                      <Badge variant={outcomeVariant(b.outcome)}>{b.outcome}</Badge>
+                      <OutcomeWithAction outcome={b.outcome} controlledAction={controlledAction} />
                       {b.requiresApproval && (
                         <span className="ml-2 text-xs text-amber-700">needs {b.approver} approval{b.deferToStage ? ` · enforce at ${b.deferToStage}` : ""}</span>
                       )}
@@ -2039,9 +2086,25 @@ function ContextTab({ aiPrompt, setAiPrompt, documents, addDocument, removeDocum
 
 function ConfigurationTab({ configSection, setConfigSection, typeKey, setTypeKey, type, setBranches,
   domain, setDomain, fn, setFn, taxonomy, description, setDescription, personas,
-  trigger, setTrigger, applicability, setApplicability,
+  trigger, setTrigger, controlledAction, setControlledAction,
+  applicability, setApplicability,
   scopeBlocks, setScopeBlocks, audiences,
   branches, addElseIf, removeBranch, updateBranch }) {
+  const controlledActionOptions = getControlledActionOptions(fn);
+
+  function changeDomain(nextDomain) {
+    const nextFn = taxonomy[nextDomain][0];
+    setDomain(nextDomain);
+    setFn(nextFn);
+    const options = getControlledActionOptions(nextFn);
+    if (!options.includes(controlledAction)) setControlledAction(options[0] || "");
+  }
+
+  function changeFn(nextFn) {
+    setFn(nextFn);
+    const options = getControlledActionOptions(nextFn);
+    if (!options.includes(controlledAction)) setControlledAction(options[0] || "");
+  }
   return (
     <div className="flex min-h-[calc(100vh-180px)]">
       {/* sidenav */}
@@ -2089,16 +2152,25 @@ function ConfigurationTab({ configSection, setConfigSection, typeKey, setTypeKey
 
             <div className="grid grid-cols-2 gap-4">
               <Field label="Domain">
-                <SimpleSelect value={domain} onChange={(v) => { setDomain(v); setFn(taxonomy[v][0]); }} options={Object.keys(taxonomy)} />
+                <SimpleSelect value={domain} onChange={changeDomain} options={Object.keys(taxonomy)} />
               </Field>
               <Field label="Function" hint="implied by Domain">
-                <SimpleSelect value={fn} onChange={setFn} options={taxonomy[domain] || []} />
+                <SimpleSelect value={fn} onChange={changeFn} options={taxonomy[domain] || []} />
               </Field>
             </div>
 
-            <Field label="Trigger" hint="When the policy is evaluated">
-              <SimpleSelect value={trigger} onChange={setTrigger} options={TRIGGERS} />
-            </Field>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Trigger" hint="When the policy is evaluated">
+                <SimpleSelect value={trigger} onChange={setTrigger} options={TRIGGERS} />
+              </Field>
+              <Field label="Controlled action" hint="The specific capability this policy gates">
+                <SimpleSelect
+                  value={controlledAction}
+                  onChange={setControlledAction}
+                  options={controlledActionOptions}
+                />
+              </Field>
+            </div>
 
             <Field label="Description">
               <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
@@ -2155,6 +2227,11 @@ function ConfigurationTab({ configSection, setConfigSection, typeKey, setTypeKey
                         value={b.outcome}
                         onChange={(v) => updateBranch(b.id, { outcome: v })}
                       />
+                      {controlledAction && (
+                        <p className="mt-1.5 text-xs text-muted-foreground">
+                          Applies to <span className="font-medium text-foreground">{controlledAction}</span>
+                        </p>
+                      )}
                     </Field>
                     <BranchEnforcementEditor
                       branch={b}
@@ -2190,6 +2267,7 @@ function ConfigurationTab({ configSection, setConfigSection, typeKey, setTypeKey
               <div><span className="mb-1 block text-xs text-muted-foreground">Type</span><Badge variant="outline">{typeKey}</Badge></div>
               <div><span className="mb-1 block text-xs text-muted-foreground">Business Function</span><span>{domain} <ChevronRight className="inline h-3 w-3 opacity-50" /> {fn}</span></div>
               <div><span className="mb-1 block text-xs text-muted-foreground">Trigger</span><Badge variant="secondary">{trigger}</Badge></div>
+              <div><span className="mb-1 block text-xs text-muted-foreground">Controlled action</span><Badge variant="outline">{controlledAction || "—"}</Badge></div>
               <div><span className="mb-1 block text-xs text-muted-foreground">Personas</span>
                 {personas.length ? <div className="flex flex-wrap gap-1">{personas.map((p) => <Badge key={p} variant="outline">{p}</Badge>)}</div> : <span className="text-xs text-muted-foreground">Not set — derived at outcome level</span>}
               </div>
@@ -2206,7 +2284,7 @@ function ConfigurationTab({ configSection, setConfigSection, typeKey, setTypeKey
                       <div className="flex flex-wrap items-center gap-2 text-xs">
                         <Badge variant={branchVariant(b.kind)}>{b.kind}</Badge>
                         <ArrowRight className="h-3 w-3 text-muted-foreground" />
-                        <Badge variant={outcomeVariant(b.outcome)}>{b.outcome}</Badge>
+                        <OutcomeWithAction outcome={b.outcome} controlledAction={controlledAction} />
                         {b.requiresApproval && (
                           <Badge variant="outline" className="gap-1 border-amber-200 bg-amber-50 text-amber-700">
                             <Check className="h-3 w-3" /> {b.approver} approval{b.deferToStage ? ` · enforce at ${b.deferToStage}` : ""}
