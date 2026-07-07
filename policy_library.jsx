@@ -323,16 +323,129 @@ const AUDIENCES_SEED = [
   },
 ];
 
+const POLICY_PRIORITIES = ["High", "Medium", "Low"];
+
+const PRIORITY_DOT_COLORS = {
+  Mandatory: "bg-rose-500",
+  High: "bg-amber-500",
+  Medium: "bg-sky-500",
+  Low: "bg-slate-400",
+};
+
+function PriorityDot({ priority, mandatory, className }) {
+  const label = mandatory ? "Mandatory" : (priority || "Medium");
+  return (
+    <span className={cn("h-2 w-2 shrink-0 rounded-full", PRIORITY_DOT_COLORS[label] || PRIORITY_DOT_COLORS.Medium, className)} />
+  );
+}
+
 const POLICY_SOURCE = {
   RECORDING: "Country-Level Recording Restriction Policy.pdf",
   SOURCING: "Sourcing Agent — Workflows & Policies.pdf",
   INDIA_APPLY: "Capgemini",
 };
 
+const POLICY_DEMO_OUTCOMES = {
+  p1: { outcome: "Block", message: "Recording disabled for GDPR jurisdictions." },
+  p22: { outcome: "Soft Stop / Block", message: "Country-specific recording and AI insight rules apply." },
+  p18: { outcome: "Block", message: "Current employees are excluded from external sourcing." },
+  p2: { outcome: "Soft Stop", message: "Tier 1 no-poach client — legal confirmation required." },
+};
+
+function getPolicyPriorityLabel(policy) {
+  if (policy?.mandatory) return "Mandatory";
+  return policy?.priority || "Medium";
+}
+
+function priorityScore(policy) {
+  if (policy?.mandatory) return 4;
+  if (policy?.priority === "High") return 3;
+  if (policy?.priority === "Low") return 1;
+  return 2;
+}
+
+function defaultPolicyPriority(existing) {
+  if (existing?.mandatory) return "High";
+  return existing?.priority || "Medium";
+}
+
+function PriorityBadge({ policy, priority }) {
+  const label = policy ? getPolicyPriorityLabel(policy) : (priority || "Medium");
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-lg border bg-background px-2 py-0.5 text-xs font-medium">
+      <PriorityDot priority={label} mandatory={label === "Mandatory"} className="h-1.5 w-1.5" />
+      {label}
+    </span>
+  );
+}
+
+function PriorityConfigField({ priority, setPriority, mandatory }) {
+  return (
+    <Field label="Priority" hint="When multiple policies match the same case, higher priority wins. Mandatory policies always take precedence.">
+      {mandatory ? (
+        <div className="inline-flex items-center gap-2 rounded-lg border px-3 py-2">
+          <PriorityDot mandatory />
+          <span className="text-sm font-medium">Mandatory</span>
+          <span className="text-xs text-muted-foreground">System-mandatory — cannot be lowered</span>
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {POLICY_PRIORITIES.map((p) => {
+            const active = priority === p;
+            return (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setPriority(p)}
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors",
+                  active ? SELECTED_CHIP_CLASSES : "text-foreground hover:border-muted-foreground/40",
+                )}
+              >
+                <PriorityDot priority={p} />
+                {p}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </Field>
+  );
+}
+
+function ConflictResolutionSummary({ priority, mandatory, coPolicies }) {
+  return (
+    <>
+      <div>
+        <span className="mb-1 block text-xs text-muted-foreground">Priority</span>
+        <PriorityBadge policy={mandatory ? { mandatory: true } : { priority }} />
+      </div>
+      <div className="col-span-2 rounded-lg border bg-muted/20 px-3 py-2.5 text-xs text-muted-foreground">
+        <p>
+          When multiple policies match, the <span className="font-medium text-foreground">highest priority</span> policy determines the final outcome and user message.
+        </p>
+        {coPolicies.length > 0 && (
+          <div className="mt-2.5">
+            <p className="mb-1.5 font-medium text-foreground">Co-linked policies on shared workflows</p>
+            <div className="space-y-1">
+              {coPolicies.map((p) => (
+                <div key={p.id} className="flex flex-wrap items-center gap-2">
+                  <span className="text-foreground">{p.name}</span>
+                  <PriorityBadge policy={p} />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 const POLICIES_SEED = [
-  { id: "p22", name: "Interview Feature Restriction", type: "Guardrail", domain: "Hiring Intelligence", fn: "Interview Intelligence", scope: [], status: "Active", personas: ["Candidate", "Interviewer"], trigger: "At scheduling", source: POLICY_SOURCE.RECORDING, controlledAction: "Interview Recording" },
-  { id: "p1", name: "EU Recording Restriction", type: "Guardrail", domain: "Hiring Intelligence", fn: "Interview Intelligence", scope: ["EMEA GDPR Candidates", "Current Employees"], scopeInline: true, status: "Active", personas: ["Candidate", "Interviewer"], trigger: "At scheduling", applicability: { location: "EU / GDPR Countries" }, source: POLICY_SOURCE.RECORDING, controlledAction: "Interview Recording" },
-  { id: "p2", name: "No-Poach Tier 1 Block", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Protected Client No-Poach Tier 1"], status: "Active", personas: ["Recruiter"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression" },
+  { id: "p22", name: "Interview Feature Restriction", type: "Guardrail", domain: "Hiring Intelligence", fn: "Interview Intelligence", scope: [], status: "Active", personas: ["Candidate", "Interviewer"], trigger: "At scheduling", priority: "Medium", source: POLICY_SOURCE.RECORDING, controlledAction: "Interview Recording" },
+  { id: "p1", name: "EU Recording Restriction", type: "Guardrail", domain: "Hiring Intelligence", fn: "Interview Intelligence", scope: ["EMEA GDPR Candidates", "Current Employees"], scopeInline: true, status: "Active", personas: ["Candidate", "Interviewer"], trigger: "At scheduling", priority: "High", applicability: { location: "EU / GDPR Countries" }, source: POLICY_SOURCE.RECORDING, controlledAction: "Interview Recording" },
+  { id: "p2", name: "No-Poach Tier 1 Block", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Protected Client No-Poach Tier 1"], status: "Active", personas: ["Recruiter"], trigger: "When application is received", priority: "High", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression" },
 
   // ---- EPFO / India verification policies (spreadsheet) ----
   { id: "p8", name: "Do-Not-Hire Employer Block", type: "Guardrail", domain: "Talent Acquisition", fn: "Screening", scope: ["India Applicants", "Do-Not-Hire Employers"], status: "Active", personas: ["Recruiter", "Compliance Reviewer"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Submission" },
@@ -351,7 +464,7 @@ const POLICIES_SEED = [
   { id: "p17", name: "Candidate Consent Gate", type: "Guardrail", domain: "Compliance", fn: "Data Privacy", scope: [], status: "Active", personas: ["Candidate"], trigger: "On candidate sourced", source: POLICY_SOURCE.SOURCING, controlledAction: "Candidate Sourcing" },
   { id: "p18", name: "Current Employee Exclusion", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Current Employees"], status: "Active", personas: ["Recruiter"], trigger: "On candidate sourced", mandatory: true, source: POLICY_SOURCE.SOURCING, controlledAction: "Candidate Sourcing" },
   { id: "p19", name: "Country Sourcing Restriction", type: "Guardrail", domain: "Compliance", fn: "Data Privacy", scope: [], status: "Active", personas: ["Recruiter"], trigger: "On candidate sourced", source: POLICY_SOURCE.SOURCING, controlledAction: "Candidate Sourcing" },
-  { id: "p20", name: "Job Family Suppression", type: "Routing", domain: "Talent Acquisition", fn: "Sourcing", scope: [], status: "Draft", personas: [], trigger: "On job publish", source: POLICY_SOURCE.SOURCING, controlledAction: "Automated Sourcing" },
+  { id: "p20", name: "Job Family Suppression", type: "Routing", domain: "Talent Acquisition", fn: "Sourcing", scope: [], status: "Draft", personas: [], trigger: "On job publish", priority: "Low", source: POLICY_SOURCE.SOURCING, controlledAction: "Automated Sourcing" },
   { id: "p21", name: "Rehire Cooling-Off", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Rehire Candidates"], status: "Active", personas: ["Recruiter"], trigger: "On candidate sourced", source: POLICY_SOURCE.SOURCING, controlledAction: "Candidate Sourcing" },
 ];
 
@@ -362,6 +475,28 @@ const WORKFLOWS_SEED = [
   { id: "wf-7", name: "India Application Compliance Screen", type: "Pipeline", stage: "Screening", status: "Active", policies: ["p8", "p9", "p10", "p11", "p16"] },
   { id: "wf-8", name: "No-Poach Enforcement Flow", type: "Workflow", stage: "Sourcing", status: "Active", policies: ["p2", "p12", "p13", "p14", "p15", "p16"] },
 ];
+
+function getCoPoliciesOnWorkflows(policyId, policies) {
+  const workflows = WORKFLOWS_SEED.filter((w) => w.policies.includes(policyId));
+  const coPolicyIds = new Set();
+  workflows.forEach((w) => w.policies.forEach((id) => { if (id !== policyId) coPolicyIds.add(id); }));
+  return [...coPolicyIds].map((id) => policies.find((p) => p.id === id)).filter(Boolean);
+}
+
+function getWorkflowConflictPreviews(policyId, policies) {
+  return WORKFLOWS_SEED
+    .filter((w) => w.policies.includes(policyId) && w.policies.length > 1)
+    .map((workflow) => {
+      const workflowPolicies = workflow.policies
+        .map((id) => policies.find((p) => p.id === id))
+        .filter(Boolean)
+        .sort((a, b) => priorityScore(b) - priorityScore(a));
+      const winner = workflowPolicies[0];
+      const suppressed = workflowPolicies.slice(1);
+      const winnerDemo = POLICY_DEMO_OUTCOMES[winner?.id] || { outcome: winner?.type || "—", message: "Highest-priority policy message is shown." };
+      return { workflow, workflowPolicies, winner, suppressed, winnerDemo };
+    });
+}
 
 const ACTION_CONFIG = {
   "Create Case": { label: "Case type", field: "caseType", options: ["Compliance", "HR Review", "Technical", "Privacy"] },
@@ -429,6 +564,22 @@ function branchVariant(kind) {
   if (kind === "IF") return "default";
   if (kind === "ELSE IF") return "secondary";
   return "outline";
+}
+
+function RuleBranchHeader({ ruleNumber, kind, onRemove }) {
+  return (
+    <div className="flex items-center justify-between border-b bg-muted/50 px-3.5 py-2">
+      <span className="text-sm font-medium">Rule {ruleNumber}</span>
+      <div className="flex items-center gap-2">
+        <Badge variant={branchVariant(kind)}>{kind}</Badge>
+        {kind === "ELSE IF" && onRemove && (
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={onRemove}>
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function seedRuleForPolicy(existing, type) {
@@ -592,7 +743,6 @@ function seedRuleForPolicy(existing, type) {
         controlledActions: ["AI Interview Analysis"],
         reason: "Only AI-generated interview insights are blocked in Spain.",
       },
-      { kind: "ELSE", outcome: outcome("Allow"), controlledActions: [] },
     ] };
   }
 
@@ -1680,6 +1830,7 @@ function LibraryView({ policies, openBuilder, newPolicy }) {
               <TableHead>Business Function</TableHead>
               <TableHead>Trigger</TableHead>
               <TableHead>Scope</TableHead>
+              <TableHead>Priority</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="bg-muted/50">Source</TableHead>
             </TableRow>
@@ -1704,6 +1855,7 @@ function LibraryView({ policies, openBuilder, newPolicy }) {
                         {p.scopeInline && <Badge variant="secondary">Custom group</Badge>}
                       </div>}
                 </TableCell>
+                <TableCell><PriorityBadge policy={p} /></TableCell>
                 <TableCell><StatusDot status={p.status} /></TableCell>
                 <TableCell className="max-w-[14rem] bg-muted/40">
                   <Input
@@ -2022,6 +2174,8 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, con
   const [fn, setFn] = useState(existing?.fn || taxonomy[Object.keys(taxonomy)[0]][0]);
   const [personas, setPersonas] = useState(existing?.personas || []);
   const [trigger, setTrigger] = useState(existing?.trigger || TRIGGERS[0]);
+  const [priority, setPriority] = useState(() => defaultPolicyPriority(existing));
+  const mandatory = !!existing?.mandatory;
   const [controlledAction, setControlledAction] = useState(() => defaultControlledAction(existing));
   const [applicability, setApplicability] = useState({ ...defaultApplicability, ...(existing?.applicability || {}) });
 
@@ -2054,6 +2208,7 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, con
   }, [configMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const linkedWorkflows = WORKFLOWS_SEED.filter((w) => w.policies.includes(existing?.id));
+  const coPolicies = getCoPoliciesOnWorkflows(existing?.id, policies);
 
   function addElseIf() {
     const insertAt = branches.length - 1;
@@ -2089,7 +2244,7 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, con
   function publish() {
     const scope = scopeBlocks.filter((b) => b.type === "audience").map((b) => b.audienceName);
     const scopeInline = scopeBlocks.some((b) => b.type === "custom");
-    const base = { id: existing?.id || `p${uid++}`, name, type: typeKey, domain, fn, scope, scopeInline, status, personas, applicability, source: existing?.source, configMode };
+    const base = { id: existing?.id || `p${uid++}`, name, type: typeKey, domain, fn, scope, scopeInline, status, personas, applicability, source: existing?.source, configMode, priority: mandatory ? undefined : priority, mandatory: mandatory || undefined };
     const record = configMode === "rule"
       ? {
           ...base,
@@ -2188,6 +2343,7 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, con
             scopeBlocks={scopeBlocks} setScopeBlocks={setScopeBlocks}
             audiences={audiences}
             branches={branches} addElseIf={addElseIf} removeBranch={removeBranch} updateBranch={updateBranch}
+            priority={priority} setPriority={setPriority} mandatory={mandatory} coPolicies={coPolicies}
           />
         )}
 
@@ -2202,11 +2358,12 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, con
             scopeBlocks={scopeBlocks} setScopeBlocks={setScopeBlocks}
             audiences={audiences}
             branches={branches} addElseIf={addElseIf} removeBranch={removeBranch} updateBranch={updateBranch}
+            priority={priority} setPriority={setPriority} mandatory={mandatory} coPolicies={coPolicies}
           />
         )}
 
         {activeTab === "usage" && (
-          <UsageTab policyId={existing?.id} policyName={name} policyStatus={status} workflows={linkedWorkflows} />
+          <UsageTab policyId={existing?.id} policyName={name} policyStatus={status} workflows={linkedWorkflows} policies={policies} />
         )}
       </div>
     </div>
@@ -2396,7 +2553,8 @@ function ConfigurationTab({ configSection, setConfigSection, typeKey, setTypeKey
   trigger, setTrigger, controlledAction, setControlledAction,
   applicability, setApplicability,
   scopeBlocks, setScopeBlocks, audiences,
-  branches, addElseIf, removeBranch, updateBranch }) {
+  branches, addElseIf, removeBranch, updateBranch,
+  priority, setPriority, mandatory, coPolicies }) {
   const controlledActionOptions = getControlledActionOptions(fn);
 
   function changeDomain(nextDomain) {
@@ -2482,6 +2640,8 @@ function ConfigurationTab({ configSection, setConfigSection, typeKey, setTypeKey
             <Field label="Description">
               <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
             </Field>
+
+            <PriorityConfigField priority={priority} setPriority={setPriority} mandatory={mandatory} />
           </SectionCard>
         )}
 
@@ -2511,14 +2671,11 @@ function ConfigurationTab({ configSection, setConfigSection, typeKey, setTypeKey
             {branches.map((b, bi) => (
               <div key={b.id}>
                 <div className="overflow-hidden rounded-lg border">
-                  <div className="flex items-center justify-between border-b bg-muted/50 px-3.5 py-2">
-                    <Badge variant={branchVariant(b.kind)}>{b.kind}</Badge>
-                    {b.kind === "ELSE IF" && (
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => removeBranch(b.id)}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                  </div>
+                  <RuleBranchHeader
+                    ruleNumber={bi + 1}
+                    kind={b.kind}
+                    onRemove={() => removeBranch(b.id)}
+                  />
                   <div className="space-y-3.5 p-3.5">
                     {b.kind !== "ELSE" && (
                       <ConditionGroupBuilder
@@ -2575,6 +2732,7 @@ function ConfigurationTab({ configSection, setConfigSection, typeKey, setTypeKey
               <div><span className="mb-1 block text-xs text-muted-foreground">Business Function</span><span>{domain} <ChevronRight className="inline h-3 w-3 opacity-50" /> {fn}</span></div>
               <div><span className="mb-1 block text-xs text-muted-foreground">Trigger</span><Badge variant="secondary">{trigger}</Badge></div>
               <div><span className="mb-1 block text-xs text-muted-foreground">Controlled action</span><Badge variant="outline">{controlledAction || "—"}</Badge></div>
+              <ConflictResolutionSummary priority={priority} mandatory={mandatory} coPolicies={coPolicies} />
               <div><span className="mb-1 block text-xs text-muted-foreground">Personas</span>
                 {personas.length ? <div className="flex flex-wrap gap-1">{personas.map((p) => <Badge key={p} variant="outline">{p}</Badge>)}</div> : <span className="text-xs text-muted-foreground">Not set — derived at outcome level</span>}
               </div>
@@ -2624,7 +2782,8 @@ function ConfigurationTabRuleLevel({ configSection, setConfigSection, typeKey, s
   domain, setDomain, fn, setFn, taxonomy, description, setDescription, personas,
   applicability, setApplicability,
   scopeBlocks, setScopeBlocks, audiences,
-  branches, addElseIf, removeBranch, updateBranch }) {
+  branches, addElseIf, removeBranch, updateBranch,
+  priority, setPriority, mandatory, coPolicies }) {
   const controlledActionOptions = getControlledActionOptions(fn);
 
   function changeDomain(nextDomain) {
@@ -2701,6 +2860,8 @@ function ConfigurationTabRuleLevel({ configSection, setConfigSection, typeKey, s
             <Field label="Description">
               <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
             </Field>
+
+            <PriorityConfigField priority={priority} setPriority={setPriority} mandatory={mandatory} />
           </SectionCard>
         )}
 
@@ -2715,14 +2876,11 @@ function ConfigurationTabRuleLevel({ configSection, setConfigSection, typeKey, s
             {branches.map((b, bi) => (
               <div key={b.id}>
                 <div className="overflow-hidden rounded-lg border">
-                  <div className="flex items-center justify-between border-b bg-muted/50 px-3.5 py-2">
-                    <Badge variant={branchVariant(b.kind)}>{b.kind}</Badge>
-                    {b.kind === "ELSE IF" && (
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => removeBranch(b.id)}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                  </div>
+                  <RuleBranchHeader
+                    ruleNumber={bi + 1}
+                    kind={b.kind}
+                    onRemove={() => removeBranch(b.id)}
+                  />
                   <div className="space-y-3.5 p-3.5">
                     {b.kind !== "ELSE" && (
                       <ConditionGroupBuilder
@@ -2777,6 +2935,7 @@ function ConfigurationTabRuleLevel({ configSection, setConfigSection, typeKey, s
               <div><span className="mb-1 block text-xs text-muted-foreground">Type</span><Badge variant="outline">{typeKey}</Badge></div>
               <div><span className="mb-1 block text-xs text-muted-foreground">Product</span><span>{domain} <ChevronRight className="inline h-3 w-3 opacity-50" /> {fn}</span></div>
               <div><span className="mb-1 block text-xs text-muted-foreground">Configurator</span><Badge variant="secondary">V2</Badge></div>
+              <ConflictResolutionSummary priority={priority} mandatory={mandatory} coPolicies={coPolicies} />
               <div><span className="mb-1 block text-xs text-muted-foreground">Personas</span>
                 {personas.length ? <div className="flex flex-wrap gap-1">{personas.map((p) => <Badge key={p} variant="outline">{p}</Badge>)}</div> : <span className="text-xs text-muted-foreground">Not set — derived at outcome level</span>}
               </div>
@@ -2841,8 +3000,9 @@ function UsageMetricCard({ label, value, hint, icon: Icon }) {
   );
 }
 
-function UsageTab({ policyId, policyName, policyStatus, workflows }) {
+function UsageTab({ policyId, policyName, policyStatus, workflows, policies }) {
   const metrics = getUsageMetrics(policyId, workflows.length);
+  const conflictPreviews = policyId ? getWorkflowConflictPreviews(policyId, policies) : [];
 
   if (!policyId) {
     return (
@@ -2938,6 +3098,61 @@ function UsageTab({ policyId, policyName, policyStatus, workflows }) {
           </Card>
         )}
       </div>
+
+      {conflictPreviews.length > 0 && (
+        <div className="mt-8">
+          <div className="mb-3">
+            <h3 className="text-sm font-semibold">Conflict preview</h3>
+            <p className="text-xs text-muted-foreground">
+              When multiple policies on the same workflow match, priority determines which outcome and message users see.
+            </p>
+          </div>
+          <div className="space-y-3">
+            {conflictPreviews.map(({ workflow, workflowPolicies, winner, suppressed, winnerDemo }) => (
+              <Card key={workflow.id} className="overflow-hidden shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+                <CardHeader className="border-b bg-muted/20 py-4">
+                  <CardTitle className="text-sm">{workflow.name}</CardTitle>
+                  <CardDescription>
+                    {workflowPolicies.length} policies linked — {getPolicyPriorityLabel(winner)} priority wins
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4 p-4">
+                  <div>
+                    <p className="mb-2 text-xs font-medium text-muted-foreground">Matching policies (by priority)</p>
+                    <div className="space-y-1.5">
+                      {workflowPolicies.map((p) => (
+                        <div key={p.id} className={cn(
+                          "flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-sm",
+                          p.id === winner.id ? "border-emerald-200 bg-emerald-50/50" : "bg-muted/20",
+                        )}>
+                          <span className="font-medium">{p.name}</span>
+                          <PriorityBadge policy={p} />
+                          {p.id === winner.id ? (
+                            <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">Wins</Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Suppressed when higher priority matches</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <Separator />
+                  <div className="rounded-lg border bg-background px-3 py-2.5">
+                    <p className="text-xs text-muted-foreground">Resolved outcome</p>
+                    <p className="mt-1 text-sm font-medium">{winnerDemo.outcome}</p>
+                    <p className="mt-1 text-xs italic text-muted-foreground">"{winnerDemo.message}"</p>
+                  </div>
+                  {suppressed.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Suppressed messages from: {suppressed.map((p) => p.name).join(", ")}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
