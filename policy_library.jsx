@@ -124,7 +124,7 @@ const TRIGGERS = [
 const ENFORCEMENT_STAGES = ["Immediate", "Application", "Screening", "Interview", "Offer"];
 
 // Approvers for human-in-the-loop escalation gates.
-const APPROVERS = ["Legal", "Compliance Reviewer", "HRBP", "Talent Leadership"];
+const APPROVERS = ["Hiring Manager", "Legal", "Compliance Reviewer", "HRBP", "Talent Leadership"];
 
 const CONTROLLED_ACTIONS_BY_FN = {
   "Interview Intelligence": ["Interview Recording", "Interview Scheduling", "Interview Transcription", "AI Interview Analysis"],
@@ -162,6 +162,20 @@ function formatControlledActionsList(actions) {
 
 function getControlledActionOptions(fn) {
   return CONTROLLED_ACTIONS_BY_FN[fn] || ["Workflow Step"];
+}
+
+function defaultContextPrompt(existing) {
+  if (!existing) return "";
+  if (existing.name === "Interview Feature Restriction") {
+    return `Interview feature restrictions by country:
+
+United States: For executive roles, a soft stop is implemented where interview recording must be approved by someone else before it can be enabled.
+
+Germany: Everything related to interview recording is blocked.
+
+Spain: Only AI generation of interview insights is blocked.`;
+  }
+  return `Maintain a ${existing.type.toLowerCase()} policy for ${existing.fn} that ${existing.name.toLowerCase().includes("block") ? "blocks" : "controls"} the relevant workflow step.`;
 }
 
 function defaultControlledAction(existing) {
@@ -992,6 +1006,14 @@ function SectionCard({ title, subtitle, icon: Icon, children, right }) {
       </CardHeader>
       <CardContent className="space-y-5 p-6">{children}</CardContent>
     </Card>
+  );
+}
+
+function ConfigurationSectionContent({ children }) {
+  return (
+    <div className="flex flex-1 justify-center overflow-auto px-6 py-6">
+      <div className="w-full max-w-4xl">{children}</div>
+    </div>
   );
 }
 
@@ -1987,9 +2009,7 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, con
         : "",
   );
 
-  const [aiPrompt, setAiPrompt] = useState(existing
-    ? `Maintain a ${existing.type.toLowerCase()} policy for ${existing.fn} that ${existing.name.toLowerCase().includes("block") ? "blocks" : "controls"} the relevant workflow step.`
-    : "");
+  const [aiPrompt, setAiPrompt] = useState(() => defaultContextPrompt(existing));
   const [documents, setDocuments] = useState(existing ? [SAMPLE_DOCS[0], SAMPLE_DOCS[2]] : []);
   const [aiGenerated, setAiGenerated] = useState(!!existing);
   const [generating, setGenerating] = useState(false);
@@ -2102,9 +2122,6 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, con
             </Button>
             <Input value={name} onChange={(e) => setName(e.target.value)}
               className="h-auto min-w-0 max-w-[min(36vw,28rem)] border-0 bg-transparent px-0 text-2xl font-semibold tracking-[-0.03em] shadow-none focus-visible:ring-0" />
-            <Badge variant="outline" className="shrink-0 text-[10px] font-normal">
-              {CONFIG_MODES.find((m) => m.id === configMode)?.label}
-            </Badge>
           </div>
 
           <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
@@ -2416,7 +2433,7 @@ function ConfigurationTab({ configSection, setConfigSection, typeKey, setTypeKey
       </div>
 
       {/* section content */}
-      <div className="max-w-4xl flex-1 overflow-auto px-6 py-6">
+      <ConfigurationSectionContent>
         {configSection === "general" && (
           <SectionCard title="General" subtitle="Type, taxonomy, and description" icon={FileText}>
             <Field label="Policy type" hint="Determines allowed outcomes in Rules">
@@ -2596,7 +2613,7 @@ function ConfigurationTab({ configSection, setConfigSection, typeKey, setTypeKey
             </div>
           </SectionCard>
         )}
-      </div>
+      </ConfigurationSectionContent>
     </div>
   );
 }
@@ -2648,7 +2665,7 @@ function ConfigurationTabRuleLevel({ configSection, setConfigSection, typeKey, s
         </nav>
       </div>
 
-      <div className="max-w-4xl flex-1 overflow-auto px-6 py-6">
+      <ConfigurationSectionContent>
         {configSection === "general" && (
           <SectionCard title="General" subtitle="Type, taxonomy, and description" icon={FileText}>
             <Field label="Policy type" hint="Determines allowed outcomes in Rules">
@@ -2798,7 +2815,7 @@ function ConfigurationTabRuleLevel({ configSection, setConfigSection, typeKey, s
             </div>
           </SectionCard>
         )}
-      </div>
+      </ConfigurationSectionContent>
     </div>
   );
 }
