@@ -6,8 +6,8 @@ import {
   Upload, Paperclip, Settings, Workflow, ExternalLink, Activity, Zap, Clock, ListChecks,
   CheckCircle, Eye, Octagon, Ban, ArrowUpCircle, Pencil, Flag, RotateCcw,
   SkipForward, ListPlus, Shuffle, Repeat, Pause, XCircle, Inbox, UserPlus, Undo2, Hand,
-  Home, ChartNetwork, Bot, List, Code, PanelLeftClose, MessageSquare, UserCheck, Waypoints,
-  ClipboardCheck, TowerControl, SlidersHorizontal,
+  Home, ChartNetwork, Bot, List, Code, PanelLeftClose, PanelRightClose, MessageSquare, UserCheck, Waypoints,
+  ClipboardCheck, TowerControl, SlidersHorizontal, ArrowUp,
 } from "lucide-react";
 import {
   cn, Button, Input, Textarea, Label, Card, CardHeader, CardTitle, CardDescription,
@@ -785,7 +785,7 @@ function RuleBranchHeader({ ruleNumber, kind, onRemove }) {
 function RuleBranchTriggerField({ trigger, onChange }) {
   return (
     <Field label="Trigger" hint="When this rule is evaluated in the workflow">
-      <SimpleSelect value={trigger || TRIGGERS[0]} onChange={onChange} options={TRIGGERS} />
+      <SimpleSelect whiteBg value={trigger || TRIGGERS[0]} onChange={onChange} options={TRIGGERS} />
     </Field>
   );
 }
@@ -1249,10 +1249,10 @@ function Field({ label, hint, children }) {
   );
 }
 
-function SimpleSelect({ value, onChange, options, placeholder, labels = {} }) {
+function SimpleSelect({ value, onChange, options, placeholder, labels = {}, whiteBg = false }) {
   return (
     <Select value={value || undefined} onValueChange={onChange}>
-      <SelectTrigger>
+      <SelectTrigger className={cn(whiteBg && "bg-white shadow-sm")}>
         <SelectValue placeholder={placeholder || "Select…"} />
       </SelectTrigger>
       <SelectContent>
@@ -1277,7 +1277,22 @@ function MultiSelectChips({ value = [], onChange, options, labels = {}, placehol
     onChange(selected.filter((item) => item !== option));
   }
 
-  const selectedLabel = selected.map((option) => labels[option] || option).join(", ");
+  const chipList = selected.map((option) => (
+    <Badge key={option} variant="secondary" className="h-6 shrink-0 gap-1 pr-1 font-normal">
+      {labels[option] || option}
+      <span
+        role="button"
+        tabIndex={0}
+        onClick={(event) => removeChip(option, event)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") removeChip(option, event);
+        }}
+        className="rounded-sm text-muted-foreground hover:text-foreground"
+      >
+        <X className="h-3 w-3" />
+      </span>
+    </Badge>
+  ));
 
   return (
     <DropdownMenu>
@@ -1286,32 +1301,15 @@ function MultiSelectChips({ value = [], onChange, options, labels = {}, placehol
           type="button"
           className={cn(
             matchSelect
-              ? "flex h-auto min-h-10 w-full items-center justify-between gap-2 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm ring-offset-background focus:outline-none focus:ring-1 focus:ring-ring"
+              ? "flex h-auto min-h-10 w-full items-center justify-between gap-2 rounded-md border border-input bg-white px-2.5 py-1.5 text-sm shadow-sm ring-offset-background focus:outline-none focus:ring-1 focus:ring-ring"
               : "flex min-h-10 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
           )}
         >
-          <div className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+          <div className={cn("flex min-w-0 flex-1 items-center gap-1.5 text-left", matchSelect && "flex-wrap py-0.5")}>
             {selected.length === 0 ? (
               <span className="text-muted-foreground">{placeholder}</span>
-            ) : matchSelect ? (
-              <span className="truncate text-sm font-medium">{selectedLabel}</span>
             ) : (
-              selected.map((option) => (
-                <Badge key={option} variant="secondary" className="gap-1 pr-1 font-normal">
-                  {labels[option] || option}
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    onClick={(event) => removeChip(option, event)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") removeChip(option, event);
-                    }}
-                    className="rounded-sm text-muted-foreground hover:text-foreground"
-                  >
-                    <X className="h-3 w-3" />
-                  </span>
-                </Badge>
-              ))
+              chipList
             )}
           </div>
           <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
@@ -1327,10 +1325,18 @@ function MultiSelectChips({ value = [], onChange, options, labels = {}, placehol
                 event.preventDefault();
                 toggle(option);
               }}
-              className="flex items-center justify-between gap-2"
+              className="flex items-center gap-2.5"
             >
+              <span
+                className={cn(
+                  "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                  active ? "border-primary bg-primary text-primary-foreground" : "border-input bg-white",
+                )}
+                aria-hidden
+              >
+                {active && <Check className="h-3 w-3" />}
+              </span>
               <span>{labels[option] || option}</span>
-              {active && <Check className="h-4 w-4 text-primary" />}
             </DropdownMenuItem>
           );
         })}
@@ -1382,7 +1388,7 @@ function OutcomeSelect({ outcomes, value, onChange, compactTrigger = false }) {
   const selected = outcomes.find((o) => o.key === value);
   return (
     <Select value={value || undefined} onValueChange={onChange}>
-      <SelectTrigger className={cn("h-auto min-h-10 shadow-sm", compactTrigger ? "py-2" : "py-2.5")}>
+      <SelectTrigger className={cn("bg-white shadow-sm", compactTrigger ? "h-auto min-h-10 py-2" : "h-auto min-h-10 py-2.5")}>
         {selected ? (
           <OutcomeOptionContent outcome={selected} compact={compactTrigger} />
         ) : (
@@ -1422,7 +1428,7 @@ function SectionCard({ title, subtitle, icon: Icon, children, right }) {
 
 function ConfigurationSectionContent({ children }) {
   return (
-    <div className="flex flex-1 justify-center overflow-auto px-6 py-6">
+    <div className="flex min-h-0 flex-1 self-stretch justify-center overflow-auto px-6 py-6">
       <div className="w-full max-w-4xl">{children}</div>
     </div>
   );
@@ -1541,6 +1547,7 @@ function ConditionValueField({ value, onChange, parameters = [], allowParameters
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        className="bg-white"
       />
     );
   }
@@ -1552,7 +1559,7 @@ function ConditionValueField({ value, onChange, parameters = [], allowParameters
 
   if (isSingleParameter) {
     return (
-      <div className="relative flex h-9 min-w-0 items-center rounded-md border border-input bg-background pl-2.5 pr-9 shadow-sm">
+      <div className="relative flex h-9 min-w-0 items-center rounded-md border border-input bg-white pl-2.5 pr-9 shadow-sm">
         <Badge variant="secondary" className="h-6 max-w-full gap-1 pr-1 font-normal">
           <span className="truncate">{singleParam?.label || parts[0].key}</span>
           <button
@@ -1577,7 +1584,7 @@ function ConditionValueField({ value, onChange, parameters = [], allowParameters
 
   if (hasParameter) {
     return (
-      <div className="relative flex h-9 min-w-0 items-center gap-1 overflow-hidden rounded-md border border-input bg-background px-2.5 pr-9 shadow-sm">
+      <div className="relative flex h-9 min-w-0 items-center gap-1 overflow-hidden rounded-md border border-input bg-white px-2.5 pr-9 shadow-sm">
         {parts.map((part, index) => (
           part.type === "param" ? (
             <Badge key={`${part.key}-${index}`} variant="secondary" className="h-6 shrink-0 gap-1 pr-1 font-normal">
@@ -1612,7 +1619,7 @@ function ConditionValueField({ value, onChange, parameters = [], allowParameters
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="pr-9"
+        className="bg-white pr-9"
       />
       <ParameterInsertMenu
         parameters={parameters}
@@ -1644,10 +1651,11 @@ function ConditionRows({ rows, orGate, setOrGate, onUpdateRow, onRemoveRow, onAd
           )}
           <div className="flex items-center gap-2">
             <div className="grid flex-1 grid-cols-[1.4fr_1fr_1fr] gap-2">
-              <SimpleSelect value={row.source} onChange={(v) => onUpdateRow(row.id, { source: v })} options={DATA_SOURCES} />
-              <SimpleSelect value={groupOperator} onChange={onSetGroupOperator} options={OPERATORS} />
+              <SimpleSelect whiteBg value={row.source} onChange={(v) => onUpdateRow(row.id, { source: v })} options={DATA_SOURCES} />
+              <SimpleSelect whiteBg value={groupOperator} onChange={onSetGroupOperator} options={OPERATORS} />
               {isFieldComparison ? (
                 <SimpleSelect
+                  whiteBg
                   value={row.value}
                   onChange={(v) => onUpdateRow(row.id, { value: v })}
                   options={DATA_SOURCES.filter((d) => d !== row.source)}
@@ -1774,6 +1782,7 @@ function BranchActionsEditor({ branch, type, onChange }) {
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Action type</Label>
                     <SimpleSelect
+                      whiteBg
                       value={action.type}
                       onChange={(value) => changeActionType(action.id, value)}
                       options={availableActions}
@@ -1783,6 +1792,7 @@ function BranchActionsEditor({ branch, type, onChange }) {
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground">{meta.label}</Label>
                       <SimpleSelect
+                        whiteBg
                         value={action.config?.[meta.field] || meta.options[0]}
                         onChange={(value) => updateAction(action.id, { config: { ...action.config, [meta.field]: value } })}
                         options={meta.options}
@@ -1840,11 +1850,13 @@ function BranchNotificationsEditor({ branch, onChange }) {
             {notifications.map((notification) => (
               <div key={notification.id} className="grid grid-cols-[1fr_1fr_2rem] items-center gap-2">
                 <SimpleSelect
+                  whiteBg
                   value={notification.persona}
                   onChange={(value) => onChange(notifications.map((item) => item.id === notification.id ? { ...item, persona: value } : item))}
                   options={PERSONAS}
                 />
                 <SimpleSelect
+                  whiteBg
                   value={notification.template}
                   onChange={(value) => onChange(notifications.map((item) => item.id === notification.id ? { ...item, template: value } : item))}
                   options={NOTIFY_TEMPLATES}
@@ -1889,7 +1901,7 @@ function BranchEnforcementEditor({ branch, onChange }) {
         </div>
         {reasonOpen && (
           <Textarea
-            className="mt-3"
+            className="mt-3 bg-white"
             value={branch.reason || ""}
             onChange={(e) => onChange({ reason: e.target.value })}
             rows={2}
@@ -1913,11 +1925,12 @@ function BranchEnforcementEditor({ branch, onChange }) {
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Approver</Label>
-              <SimpleSelect value={branch.approver || APPROVERS[0]} onChange={(v) => onChange({ approver: v })} options={APPROVERS} />
+              <SimpleSelect whiteBg value={branch.approver || APPROVERS[0]} onChange={(v) => onChange({ approver: v })} options={APPROVERS} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Enforce at stage</Label>
               <SimpleSelect
+                whiteBg
                 value={deferValue}
                 onChange={(v) => onChange({ deferToStage: v === "Immediate" ? "" : v })}
                 options={ENFORCEMENT_STAGES}
@@ -1970,7 +1983,7 @@ function ConditionGroupBuilder({ groups, setGroups, orGate, setOrGate, singleGro
                 </Button>
               </div>
             )}
-            <div className="p-3.5">
+            <div className="bg-white p-3.5">
               <ConditionRows
                 rows={g.rows}
                 orGate={orGate}
@@ -2675,6 +2688,7 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, par
   const [documents, setDocuments] = useState(existing ? [SAMPLE_DOCS[0], SAMPLE_DOCS[2]] : []);
   const [aiGenerated, setAiGenerated] = useState(!!existing);
   const [generating, setGenerating] = useState(false);
+  const [aiChatOpen, setAiChatOpen] = useState(false);
 
   const [typeKey, setTypeKey] = useState(existing?.type || "Guardrail");
   const type = POLICY_TYPES.find((t) => t.key === typeKey);
@@ -2715,6 +2729,12 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, par
     }
     reloadBranchesForConfiguratorMode(configMode);
   }, [configMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (activeTab !== "configuration" || configMode !== "v3") {
+      setAiChatOpen(false);
+    }
+  }, [activeTab, configMode]);
 
   const linkedWorkflows = WORKFLOWS_SEED.filter((w) => w.policies.includes(existing?.id));
   const coPolicies = getCoPoliciesOnWorkflows(existing?.id, policies);
@@ -2787,9 +2807,9 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, par
   const scopeLabel = buildScopeLabel(applicability, scopeBlocks);
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#f8f8fb]">
+    <div className="flex h-screen flex-col overflow-hidden bg-[#f8f8fb]">
       {/* header */}
-      <div className="sticky top-0 z-20 border-b bg-white/85 px-6 py-4 backdrop-blur-xl">
+      <div className="sticky top-0 z-20 shrink-0 border-b bg-white/85 px-6 py-4 backdrop-blur-xl">
         <div className="relative flex items-center gap-4">
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <Button variant="outline" size="icon" className="h-9 w-9 shrink-0 bg-white shadow-sm" onClick={onExit}>
@@ -2837,8 +2857,8 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, par
         </div>
       </div>
 
-      {/* tab content */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex min-h-0 flex-1 items-stretch overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {activeTab === "context" && (
           <ContextTab
             aiPrompt={aiPrompt} setAiPrompt={setAiPrompt}
@@ -2890,7 +2910,7 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, par
             typeKey={typeKey} setTypeKey={setTypeKey} type={type} setBranches={setBranches}
             domain={domain} setDomain={setDomain} fn={fn} setFn={setFn} taxonomy={taxonomy}
             description={description} setDescription={setDescription}
-            personas={personas}
+            personas={personas} policyName={name}
             applicability={applicability} setApplicability={setApplicability}
             scopeBlocks={scopeBlocks} setScopeBlocks={setScopeBlocks}
             audiences={audiences}
@@ -2903,6 +2923,21 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, par
         {activeTab === "usage" && (
           <UsageTab policyId={existing?.id} policyName={name} policyStatus={status} workflows={linkedWorkflows} policies={policies} />
         )}
+        </div>
+
+      {activeTab === "configuration" && configMode === "v3" && (
+        aiChatOpen ? (
+          <ConfigurationAiChatPanel
+            onClose={() => setAiChatOpen(false)}
+            policyName={name}
+            typeKey={typeKey}
+            configSection={configSection}
+            branchCount={branches.length}
+          />
+        ) : (
+          <ConfigurationAiTab onClick={() => setAiChatOpen(true)} />
+        )
+      )}
       </div>
     </div>
   );
@@ -2915,7 +2950,7 @@ function ContextTab({ aiPrompt, setAiPrompt, documents, addDocument, removeDocum
   const availableDocs = SAMPLE_DOCS.filter((d) => !documents.includes(d));
 
   return (
-    <div className={cn("mx-auto grid max-w-6xl gap-6 px-6 py-6", aiGenerated && "xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)] xl:items-stretch")}>
+    <div className={cn("mx-auto grid max-w-6xl flex-1 gap-6 overflow-auto px-6 py-6", aiGenerated && "xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)] xl:items-stretch")}>
       <Card className="flex min-h-[calc(100vh-11rem)] flex-col overflow-hidden">
         <CardHeader className="shrink-0 border-b bg-gradient-to-br from-primary/[0.08] via-background to-background py-5">
           <div className="flex items-center gap-2">
@@ -3114,9 +3149,8 @@ function ConfigurationTab({ configSection, setConfigSection, typeKey, setTypeKey
     if (!options.includes(controlledAction)) setControlledAction(options[0] || "");
   }
   return (
-    <div className="flex min-h-[calc(100vh-180px)]">
-      {/* sidenav */}
-      <div className="w-52 shrink-0 border-r bg-background py-4">
+    <div className="flex min-h-0 flex-1 items-stretch overflow-hidden">
+      <div className="w-52 shrink-0 self-stretch overflow-y-auto border-r bg-background py-4">
         <p className="mb-2 px-4 text-xs font-medium text-muted-foreground">Sections</p>
         <nav className="space-y-1 px-2">
           {CONFIG_SECTIONS.map((s) => {
@@ -3318,10 +3352,169 @@ function ConfigurationTab({ configSection, setConfigSection, typeKey, setTypeKey
   );
 }
 
+/* ---------------- V3 configuration AI assistant ---------------- */
+
+const AI_AGENT_AVATAR = "/ai-agent-avatar.png";
+const AI_INDIGO = "#312e81";
+
+function buildConfigurationAiReply(input, { policyName, typeKey, configSection, branchCount }) {
+  const text = input.toLowerCase();
+  if (text.includes("trigger")) {
+    return "In V3, each rule can have its own trigger. Use the Trigger field at the top of each rule — for example Apply for soft stops and Offer for hard stops on no-poach policies.";
+  }
+  if (text.includes("parameter") || text.includes("(x)")) {
+    return "Click (x) in a condition value field to insert a parameter tag. Registered parameters live under Parameters in the sidebar — e.g. tier2CoolOffDays for cooling-off windows.";
+  }
+  if (text.includes("cool") || text.includes("tier 2")) {
+    return "For Tier 2 cooling-off, match the No-Poach Tier 2 list AND Days Since Last Working Day less than @tier2CoolOffDays. Adjust the default in Parameters.";
+  }
+  if (text.includes("rule") || text.includes("branch")) {
+    return `This ${typeKey} policy has ${branchCount} rule${branchCount === 1 ? "" : "s"}. Rules are evaluated FIRST_MATCH — the first matching branch wins. You're on the ${configSection} section now.`;
+  }
+  return `For "${policyName}", I can help refine ${configSection === "rules" ? "conditions, triggers, and outcomes" : `the ${configSection} section`}. Try asking about triggers, parameters, or how to model a specific scenario.`;
+}
+
+function ConfigurationAiTab({ onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex shrink-0 flex-col items-center justify-center gap-2 self-center rounded-l-xl border border-r-0 border-border/80 bg-white px-3 py-4 shadow-[-6px_0_20px_rgba(15,23,42,0.08)] transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2"
+      aria-label="Open AI assistant"
+    >
+      <img
+        src={AI_AGENT_AVATAR}
+        alt=""
+        className="h-8 w-8 rounded-full object-cover"
+      />
+      <span className="text-xs font-bold tracking-wide" style={{ color: AI_INDIGO }}>AI</span>
+    </button>
+  );
+}
+
+function ConfigurationAiChatPanel({ onClose, policyName, typeKey, configSection, branchCount }) {
+  const [messages, setMessages] = useState([
+    {
+      id: "welcome",
+      role: "assistant",
+      text: "I can help you configure this policy. What would you like to set up?",
+    },
+  ]);
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const scrollRef = useRef(null);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    setTimeout(() => inputRef.current?.focus(), 200);
+  }, []);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages, sending]);
+
+  function sendMessage() {
+    const text = input.trim();
+    if (!text || sending) return;
+    const userMsg = { id: `u-${Date.now()}`, role: "user", text };
+    setMessages((prev) => [...prev, userMsg]);
+    setInput("");
+    setSending(true);
+    setTimeout(() => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `a-${Date.now()}`,
+          role: "assistant",
+          text: buildConfigurationAiReply(text, { policyName, typeKey, configSection, branchCount }),
+        },
+      ]);
+      setSending(false);
+    }, 700);
+  }
+
+  return (
+    <aside
+      className="flex min-h-0 w-[min(380px,34vw)] shrink-0 flex-col self-stretch border-l border-[#e5e7eb] bg-white"
+      aria-label="AI assistant panel"
+    >
+      <div className="flex shrink-0 items-center gap-3 border-b border-[#e5e7eb] px-4 py-3.5">
+        <img src={AI_AGENT_AVATAR} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" />
+        <p className="min-w-0 flex-1 text-sm font-bold uppercase tracking-wide" style={{ color: AI_INDIGO }}>
+          AI ASSISTANT
+        </p>
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+          aria-label="Collapse AI assistant"
+        >
+          <PanelRightClose className="h-[18px] w-[18px]" />
+        </button>
+      </div>
+
+      <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-5">
+        {messages.map((msg) => (
+          <div
+            key={msg.id}
+            className={cn("flex", msg.role === "user" ? "justify-end" : "justify-start")}
+          >
+            <div
+              className={cn(
+                "max-w-[92%] rounded-2xl px-4 py-3 text-sm leading-relaxed",
+                msg.role === "user"
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-[#F0F2F7] text-slate-800",
+              )}
+            >
+              {msg.text}
+            </div>
+          </div>
+        ))}
+        {sending && (
+          <div className="flex justify-start">
+            <div className="rounded-2xl bg-[#F0F2F7] px-4 py-3 text-sm text-slate-500">Thinking…</div>
+          </div>
+        )}
+      </div>
+
+      <div className="shrink-0 border-t border-[#e5e7eb] bg-white px-4 py-4">
+        <div className="relative">
+          <Input
+            ref={inputRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+              }
+            }}
+            placeholder="Ask AI..."
+            className="h-11 rounded-lg border-slate-200 bg-white pr-12 pl-4 shadow-none"
+            disabled={sending}
+          />
+          <button
+            type="button"
+            onClick={sendMessage}
+            disabled={!input.trim() || sending}
+            className="absolute top-1/2 right-1.5 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label="Send message"
+          >
+            <ArrowUp className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
 /* ---------------- Configuration tab — rule-level variant ---------------- */
 
 function ConfigurationTabRuleLevel({ configuratorVariant = "v2", configSection, setConfigSection, typeKey, setTypeKey, type, setBranches,
-  domain, setDomain, fn, setFn, taxonomy, description, setDescription, personas,
+  domain, setDomain, fn, setFn, taxonomy, description, setDescription, personas, policyName = "Untitled Policy",
   applicability, setApplicability,
   scopeBlocks, setScopeBlocks, audiences, parameters = [],
   branches, addElseIf, removeBranch, updateBranch,
@@ -3350,8 +3543,8 @@ function ConfigurationTabRuleLevel({ configuratorVariant = "v2", configSection, 
   }
 
   return (
-    <div className="flex min-h-[calc(100vh-180px)]">
-      <div className="w-52 shrink-0 border-r bg-background py-4">
+    <div className="flex min-h-0 flex-1 items-stretch overflow-hidden">
+      <div className="w-52 shrink-0 self-stretch overflow-y-auto border-r bg-background py-4">
         <p className="mb-2 px-4 text-xs font-medium text-muted-foreground">Sections</p>
         <nav className="space-y-1 px-2">
           {CONFIG_SECTIONS.map((s) => {
@@ -3567,7 +3760,7 @@ function UsageTab({ policyId, policyName, policyStatus, workflows, policies }) {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-6">
+    <div className="mx-auto max-w-5xl flex-1 overflow-auto px-6 py-6">
       <div className="mb-6">
         <h2 className="text-lg font-semibold tracking-tight">Usage</h2>
         <p className="mt-0.5 text-sm text-muted-foreground">
