@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Shield, GitBranch, Users, RefreshCw, MapPin, Database, FileText, Plus, Trash2,
   ChevronRight, Save, X, Check, ChevronDown,
@@ -7,7 +7,7 @@ import {
   CheckCircle, Eye, Octagon, Ban, ArrowUpCircle, Pencil, Flag, RotateCcw,
   SkipForward, ListPlus, Shuffle, Repeat, Pause, XCircle, Inbox, UserPlus, Undo2, Hand,
   Home, ChartNetwork, Bot, List, Code, PanelLeftClose, MessageSquare, UserCheck, Waypoints,
-  ClipboardCheck, TowerControl,
+  ClipboardCheck, TowerControl, SlidersHorizontal,
 } from "lucide-react";
 import {
   cn, Button, Input, Textarea, Label, Card, CardHeader, CardTitle, CardDescription,
@@ -98,9 +98,14 @@ const PERSONAS = ["Candidate", "Recruiter", "Hiring Manager", "Interviewer", "HR
 const DATA_SOURCES = [
   "Candidate Fit Score", "Requisition Approval Status", "Employment Status", "Country / Region",
   "Job Family", "Job Grade", "Tenant / Business Unit", "Consent Status", "Tenure Since Last Working Day",
-  "Days Since Last Working Day", "Sourcing Candidate Count", "Demographic Distribution Skew",
+  "Days Since Last Working Day", "Days Since Last Interview", "Days Since Last Application",
+  "Sourcing Candidate Count", "Demographic Distribution Skew",
   "Model Confidence Score", "API Response Status", "Hiring Manager Availability",
-  "Company (via UAN/EPFO)", "Company (via Resume/Application)", "Performance Outcome", "Rehire Flag",
+  "Company (via UAN/EPFO)", "Company (via Resume/Application)", "Company (Current / Past)",
+  "Interviewer Country / Region", "Candidate Country / Region", "Job Location Country / Region",
+  "Recording Context Complete",
+  "Performance Outcome", "Rehire Flag",
+  "Do Not Rehire Flag", "Pipeline Status", "Legal Confirmation Status",
   "Offer Acceptance Status",
 ];
 const OPERATORS = ["IS IN", "IS NOT IN", "EQUALS", "NOT EQUALS", "GREATER THAN", "LESS THAN", "BETWEEN", "MATCHES", "SAME AS", "NOT SAME AS"];
@@ -119,6 +124,88 @@ const TRIGGERS = [
   "When application is received", "At screening", "At scheduling", "At offer stage",
   "On job publish", "On candidate sourced", "On segment consumed", "Continuous / scheduled",
 ];
+
+const POLICY_TRIGGER = {
+  APPLY: "When application is received",
+  SCHEDULING: "At scheduling",
+  OFFER: "At offer stage",
+  SOURCING: "On candidate sourced",
+  JOB_PUBLISH: "On job publish",
+  SCHEDULED: "Continuous / scheduled",
+};
+
+function getPolicyTriggerLabel(policy) {
+  if (policy?.configMode === "v3") {
+    const fromSettings = policy?.branchSettings?.map((b) => b.trigger).filter(Boolean) || [];
+    const unique = [...new Set(fromSettings)];
+    if (unique.length > 1) return unique.join(" · ");
+    if (unique.length === 1) return unique[0];
+  }
+  return policy?.trigger || "—";
+}
+
+function defaultTriggerForPolicy(name) {
+  const n = normalizeText(name);
+  if (n.includes("recording") || n.includes("interview feature")) return POLICY_TRIGGER.SCHEDULING;
+  if (n.includes("job family suppression")) return POLICY_TRIGGER.JOB_PUBLISH;
+  if (n.includes("msa-expiry")) return POLICY_TRIGGER.SCHEDULED;
+  if (n.includes("consent") || n.includes("employee exclusion") || n.includes("country sourcing")
+      || n.includes("company exclusion")
+      || (n.includes("rehire") && !n.includes("performance") && !n.includes("protected-client"))) {
+    return POLICY_TRIGGER.SOURCING;
+  }
+  return POLICY_TRIGGER.APPLY;
+}
+
+function finalizeSeedBranches(seed, defaultTrigger) {
+  if (!seed?.branches) return seed;
+  return {
+    branches: seed.branches.map((b) => ({
+      ...b,
+      trigger: b.trigger || defaultTrigger,
+    })),
+  };
+}
+
+const TIER2_COOLING_OFF_MATCH_ROWS = [
+  { source: "Company (via UAN/EPFO)", operator: "IS IN", value: "No-Poach — Tier 2" },
+  { source: "Days Since Last Working Day", operator: "LESS THAN", value: "@tier2CoolOffDays" },
+];
+
+function buildNoPoachTemporalRules(type, { matchRows, matchLabel, applyReason, controlledAction = "Application Progression" }) {
+  const pick = (key, fallbackIndex = 0) => type.outcomes.find((item) => item.key === key)?.key || type.outcomes[fallbackIndex]?.key || type.outcomes[0].key;
+  const controlledActions = controlledAction ? [controlledAction] : [];
+  const legalNotify = [{ persona: "Compliance Reviewer", template: "Legal: No-Poach Confirmation Required" }];
+  return {
+    branches: [
+      {
+        kind: "IF",
+        trigger: POLICY_TRIGGER.APPLY,
+        rows: matchRows,
+        outcome: pick("Soft Stop"),
+        controlledActions,
+        reason: applyReason,
+        requiresApproval: true,
+        approver: "Legal",
+        actions: ["Create Case"],
+        notifications: legalNotify,
+      },
+      {
+        kind: "ELSE IF",
+        trigger: POLICY_TRIGGER.OFFER,
+        groups: [[
+          ...matchRows,
+          { source: "Legal Confirmation Status", operator: "NOT EQUALS", value: "Approved" },
+        ]],
+        outcome: pick("Hard Stop"),
+        controlledActions,
+        reason: `Legal has not confirmed no-poach clearance by Offer — ${matchLabel}.`,
+        actions: ["Create Case"],
+        notifications: legalNotify,
+      },
+    ],
+  };
+}
 
 // Lifecycle stage at which an outcome is actually enforced (supports deferred enforcement).
 const ENFORCEMENT_STAGES = ["Immediate", "Application", "Screening", "Interview", "Offer"];
@@ -187,6 +274,7 @@ function defaultControlledAction(existing) {
 const CONFIG_MODES = [
   { id: "policy", label: "V1" },
   { id: "rule", label: "V2" },
+  { id: "v3", label: "V3" },
 ];
 
 function defaultBranchControlledActions(fn, policyAction, outcome) {
@@ -198,7 +286,7 @@ function defaultBranchControlledActions(fn, policyAction, outcome) {
 }
 
 function hydrateBranchesForMode(branches, { existing, fn, policyControlledAction, policyTrigger, configMode }) {
-  if (configMode !== "rule") return branches;
+  if (configMode !== "rule" && configMode !== "v3") return branches;
   const settings = existing?.branchSettings || [];
   return branches.map((b, i) => {
     const saved = settings.find((s) => s.kind === b.kind && (s.index === undefined || s.index === i))
@@ -209,7 +297,7 @@ function hydrateBranchesForMode(branches, { existing, fn, policyControlledAction
       : savedActions || defaultBranchControlledActions(fn, b.controlledAction || policyControlledAction, b.outcome);
     return {
       ...b,
-      trigger: b.trigger || saved?.trigger || existing?.trigger || policyTrigger || TRIGGERS[0],
+      ...(configMode === "v3" ? { trigger: b.trigger || saved?.trigger || policyTrigger || TRIGGERS[0] } : {}),
       controlledActions: branchActions,
       controlledAction: branchActions[0] || "",
     };
@@ -285,6 +373,101 @@ const MANAGED_LISTS = [
   { id: "ml-comp", name: "Competitor Exclusion List", kind: "Exclusion", tier: null, entries: 48, aliases: true, subsidiaries: true, coolingOff: null, source: "Manual + CRM", note: "Direct competitors excluded from sourcing." },
 ];
 
+const PARAMETERS_SEED = [
+  {
+    id: "par-1",
+    key: "interviewCoolOffDays",
+    label: "Interview cool-off window",
+    value: "180",
+    unit: "days",
+    scope: "Tenant · Job family · Location",
+    description: "Recently interviewed candidates are excluded from sourcing within this window (PDF default: 6 months).",
+    usedBy: ["Rehire"],
+  },
+  {
+    id: "par-2",
+    key: "applicantRecencyDays",
+    label: "Past applicant recency window",
+    value: "90",
+    unit: "days",
+    scope: "Tenant · Job family · Location",
+    description: "Past applicants excluded from sourcing outreach within this window.",
+    usedBy: ["Rehire"],
+  },
+  {
+    id: "par-6",
+    key: "tier2CoolOffDays",
+    label: "No-Poach Tier 2 cooling-off window",
+    value: "180",
+    unit: "days",
+    scope: "Tenant · Job family · Location",
+    description: "Departed Tier 2 protected-client candidates remain restricted within this window (list default: 6 months).",
+    usedBy: ["No-Poach Tier 2 Cooling-Off"],
+  },
+  {
+    id: "par-3",
+    key: "rehireDepartureSoftStopDays",
+    label: "Rehire departure soft-stop window",
+    value: "180",
+    unit: "days",
+    scope: "India applicants",
+    description: "Recent departure threshold for rehire performance soft stop (<6 months).",
+    usedBy: ["Rehire Performance Screen"],
+  },
+  {
+    id: "par-4",
+    key: "rehireDepartureMonitorMinDays",
+    label: "Rehire monitor window (min)",
+    value: "365",
+    unit: "days",
+    scope: "India applicants",
+    description: "Lower bound for departure monitor band (1–3 years).",
+    usedBy: ["Rehire Performance Screen"],
+  },
+  {
+    id: "par-5",
+    key: "rehireDepartureMonitorMaxDays",
+    label: "Rehire monitor window (max)",
+    value: "1095",
+    unit: "days",
+    scope: "India applicants",
+    description: "Upper bound for departure monitor band (1–3 years).",
+    usedBy: ["Rehire Performance Screen"],
+  },
+];
+
+function formatParameterRef(key) {
+  return key ? `@${key}` : "";
+}
+
+function parseParameterRef(value) {
+  const text = String(value || "");
+  return text.startsWith("@") ? text.slice(1) : "";
+}
+
+function isParameterRef(value) {
+  return String(value || "").startsWith("@");
+}
+
+function getParameterByKey(parameters, key) {
+  return (parameters || []).find((param) => param.key === key);
+}
+
+function formatConditionValue(value, parameters = []) {
+  if (!value) return value;
+  let display = String(value);
+  parameters.forEach((param) => {
+    const token = formatParameterRef(param.key);
+    const replacement = `${param.label} (${param.value}${param.unit ? ` ${param.unit}` : ""})`;
+    display = display.split(token).join(replacement);
+  });
+  return display;
+}
+
+function formatConditionClause(row, parameters = []) {
+  return `${row.source} ${row.operator} "${formatConditionValue(row.value, parameters)}"`;
+}
+
 const AUDIENCES_SEED = [
   {
     id: "aud-1", name: "EMEA GDPR Candidates",
@@ -294,7 +477,7 @@ const AUDIENCES_SEED = [
   {
     id: "aud-2", name: "Current Employees",
     summary: [{ source: "Employment Status", operator: "EQUALS", value: "Current Employee" }],
-    usedBy: ["EU Recording Restriction", "Current Employee Exclusion", "No-Poach Tier 1 Block", "Rehire Cooling-Off"],
+    usedBy: ["EU Recording Restriction", "Current Employee Exclusion", "No-Poach Tier 1 Block", "Rehire"],
   },
   {
     id: "aud-4", name: "Protected Client No-Poach Tier 1",
@@ -308,7 +491,10 @@ const AUDIENCES_SEED = [
   },
   {
     id: "aud-6", name: "No-Poach Tier 2 Protected",
-    summary: [{ source: "Company (via UAN/EPFO)", operator: "IS IN", value: "No-Poach — Tier 2" }],
+    summary: [
+      { source: "Company (via UAN/EPFO)", operator: "IS IN", value: "No-Poach — Tier 2" },
+      { source: "Days Since Last Working Day", operator: "LESS THAN", value: "@tier2CoolOffDays" },
+    ],
     usedBy: ["No-Poach Tier 2 Cooling-Off"],
   },
   {
@@ -319,7 +505,7 @@ const AUDIENCES_SEED = [
   {
     id: "aud-8", name: "Rehire Candidates",
     summary: [{ source: "Rehire Flag", operator: "EQUALS", value: "Yes" }],
-    usedBy: ["Rehire Performance Screen", "Rehire Protected-Client Review", "Rehire Cooling-Off"],
+    usedBy: ["Rehire Performance Screen", "Rehire Protected-Client Review", "Rehire"],
   },
 ];
 
@@ -346,10 +532,13 @@ const POLICY_SOURCE = {
 };
 
 const POLICY_DEMO_OUTCOMES = {
-  p1: { outcome: "Block", message: "Recording disabled for GDPR jurisdictions." },
+  p1: { outcome: "Block", message: "Recording blocked when any geographic dimension is restricted or context is unknown." },
   p22: { outcome: "Soft Stop / Block", message: "Country-specific recording and AI insight rules apply." },
   p18: { outcome: "Block", message: "Current employees are excluded from external sourcing." },
-  p2: { outcome: "Soft Stop", message: "Tier 1 no-poach client — legal confirmation required." },
+  p21: { outcome: "Block", message: "Rehire ineligibility filters applied at sourcing time." },
+  p23: { outcome: "Block", message: "Competitor or disqualified company exclusion." },
+  p2: { outcome: "Soft Stop / Hard Stop", message: "Tier 1 no-poach: Soft Stop at Apply; Hard Stop at Offer if Legal has not approved." },
+  p12: { outcome: "Soft Stop / Hard Stop", message: "Tier 2 departure within cooling-off window (@tier2CoolOffDays): Soft Stop at Apply; Hard Stop at Offer if Legal has not approved." },
 };
 
 function getPolicyPriorityLabel(policy) {
@@ -443,34 +632,45 @@ function ConflictResolutionSummary({ priority, mandatory, coPolicies }) {
 }
 
 const POLICIES_SEED = [
-  { id: "p22", name: "Interview Feature Restriction", type: "Guardrail", domain: "Hiring Intelligence", fn: "Interview Intelligence", scope: [], status: "Active", personas: ["Candidate", "Interviewer"], trigger: "At scheduling", priority: "Medium", source: POLICY_SOURCE.RECORDING, controlledAction: "Interview Recording" },
-  { id: "p1", name: "EU Recording Restriction", type: "Guardrail", domain: "Hiring Intelligence", fn: "Interview Intelligence", scope: ["EMEA GDPR Candidates", "Current Employees"], scopeInline: true, status: "Active", personas: ["Candidate", "Interviewer"], trigger: "At scheduling", priority: "High", applicability: { location: "EU / GDPR Countries" }, source: POLICY_SOURCE.RECORDING, controlledAction: "Interview Recording" },
-  { id: "p2", name: "No-Poach Tier 1 Block", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Protected Client No-Poach Tier 1"], status: "Active", personas: ["Recruiter"], trigger: "When application is received", priority: "High", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression" },
+  { id: "p22", name: "Interview Feature Restriction", type: "Guardrail", domain: "Hiring Intelligence", fn: "Interview Intelligence", scope: [], status: "Active", personas: ["Candidate", "Interviewer"], trigger: "At scheduling", priority: "Medium", source: POLICY_SOURCE.RECORDING, controlledAction: "Interview Recording", configMode: "v3" },
+  { id: "p1", name: "EU Recording Restriction", type: "Guardrail", domain: "Hiring Intelligence", fn: "Interview Intelligence", scope: ["EMEA GDPR Candidates", "Current Employees"], scopeInline: true, status: "Active", personas: ["Candidate", "Interviewer"], trigger: "At scheduling", priority: "High", applicability: { location: "EU / GDPR Countries" }, source: POLICY_SOURCE.RECORDING, controlledAction: "Interview Recording", configMode: "v3" },
+  { id: "p2", name: "No-Poach Tier 1 Block", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Protected Client No-Poach Tier 1"], status: "Active", personas: ["Recruiter"], trigger: "When application is received", priority: "High", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression", configMode: "v3",
+    branchSettings: [
+      { index: 0, kind: "IF", trigger: POLICY_TRIGGER.APPLY, controlledActions: ["Application Progression"] },
+      { index: 1, kind: "ELSE IF", trigger: POLICY_TRIGGER.OFFER, controlledActions: ["Application Progression"] },
+    ],
+  },
 
   // ---- EPFO / India verification policies (spreadsheet) ----
-  { id: "p8", name: "Do-Not-Hire Employer Block", type: "Guardrail", domain: "Talent Acquisition", fn: "Screening", scope: ["India Applicants", "Do-Not-Hire Employers"], status: "Active", personas: ["Recruiter", "Compliance Reviewer"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Submission" },
-  { id: "p9", name: "Do-Not-Hire Alias Match", type: "Guardrail", domain: "Talent Acquisition", fn: "Screening", scope: ["India Applicants", "Do-Not-Hire Employers"], status: "Active", personas: ["Recruiter"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Submission" },
-  { id: "p10", name: "Resume vs UAN Mismatch", type: "Guardrail", domain: "Talent Acquisition", fn: "Screening", scope: ["India Applicants"], status: "Active", personas: ["Recruiter", "Compliance Reviewer"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Submission" },
-  { id: "p11", name: "Rehire Performance Screen", type: "Guardrail", domain: "Talent Acquisition", fn: "Screening", scope: ["India Applicants", "Rehire Candidates"], status: "Active", personas: ["HRBP"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression" },
+  { id: "p8", name: "Do-Not-Hire Employer Block", type: "Guardrail", domain: "Talent Acquisition", fn: "Screening", scope: ["India Applicants", "Do-Not-Hire Employers"], status: "Active", personas: ["Recruiter", "Compliance Reviewer"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Submission", configMode: "v3" },
+  { id: "p9", name: "Do-Not-Hire Alias Match", type: "Guardrail", domain: "Talent Acquisition", fn: "Screening", scope: ["India Applicants", "Do-Not-Hire Employers"], status: "Active", personas: ["Recruiter"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Submission", configMode: "v3" },
+  { id: "p10", name: "Resume vs UAN Mismatch", type: "Guardrail", domain: "Talent Acquisition", fn: "Screening", scope: ["India Applicants"], status: "Active", personas: ["Recruiter", "Compliance Reviewer"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Submission", configMode: "v3" },
+  { id: "p11", name: "Rehire Performance Screen", type: "Guardrail", domain: "Talent Acquisition", fn: "Screening", scope: ["India Applicants", "Rehire Candidates"], status: "Active", personas: ["HRBP"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression", configMode: "v3" },
 
   // ---- No-Poach program (spreadsheet, tiered) ----
-  { id: "p12", name: "No-Poach Tier 2 Cooling-Off", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["No-Poach Tier 2 Protected"], status: "Active", personas: ["Recruiter", "Compliance Reviewer"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression" },
-  { id: "p13", name: "No-Poach Concealment Hard Stop", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Protected Client No-Poach Tier 1"], status: "Active", personas: ["Compliance Reviewer"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression" },
-  { id: "p14", name: "No-Poach Alias & Subsidiary Match", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Protected Client No-Poach Tier 1"], status: "Active", personas: ["Recruiter"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression" },
-  { id: "p15", name: "No-Poach MSA-Expiry Downgrade", type: "State Transition", domain: "Talent Acquisition", fn: "Sourcing", scope: [], status: "Active", personas: ["Compliance Reviewer"], trigger: "Continuous / scheduled", source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "No-Poach Restriction Level" },
-  { id: "p16", name: "Rehire Protected-Client Review", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Rehire Candidates"], status: "Active", personas: ["Recruiter"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression" },
+  { id: "p12", name: "No-Poach Tier 2 Cooling-Off", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["No-Poach Tier 2 Protected"], status: "Active", personas: ["Recruiter", "Compliance Reviewer"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression", configMode: "v3",
+    branchSettings: [
+      { index: 0, kind: "IF", trigger: POLICY_TRIGGER.APPLY, controlledActions: ["Application Progression"] },
+      { index: 1, kind: "ELSE IF", trigger: POLICY_TRIGGER.OFFER, controlledActions: ["Application Progression"] },
+    ],
+  },
+  { id: "p13", name: "No-Poach Concealment Hard Stop", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Protected Client No-Poach Tier 1"], status: "Active", personas: ["Compliance Reviewer"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression", configMode: "v3" },
+  { id: "p14", name: "No-Poach Alias & Subsidiary Match", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Protected Client No-Poach Tier 1"], status: "Active", personas: ["Recruiter"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression", configMode: "v3" },
+  { id: "p15", name: "No-Poach MSA-Expiry Downgrade", type: "State Transition", domain: "Talent Acquisition", fn: "Sourcing", scope: [], status: "Active", personas: ["Compliance Reviewer"], trigger: "Continuous / scheduled", source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "No-Poach Restriction Level", configMode: "v3" },
+  { id: "p16", name: "Rehire Protected-Client Review", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Rehire Candidates"], status: "Active", personas: ["Recruiter"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression", configMode: "v3" },
 
   // ---- Sourcing Agent policies (PDF 2) ----
-  { id: "p17", name: "Candidate Consent Gate", type: "Guardrail", domain: "Compliance", fn: "Data Privacy", scope: [], status: "Active", personas: ["Candidate"], trigger: "On candidate sourced", source: POLICY_SOURCE.SOURCING, controlledAction: "Candidate Sourcing" },
-  { id: "p18", name: "Current Employee Exclusion", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Current Employees"], status: "Active", personas: ["Recruiter"], trigger: "On candidate sourced", mandatory: true, source: POLICY_SOURCE.SOURCING, controlledAction: "Candidate Sourcing" },
-  { id: "p19", name: "Country Sourcing Restriction", type: "Guardrail", domain: "Compliance", fn: "Data Privacy", scope: [], status: "Active", personas: ["Recruiter"], trigger: "On candidate sourced", source: POLICY_SOURCE.SOURCING, controlledAction: "Candidate Sourcing" },
-  { id: "p20", name: "Job Family Suppression", type: "Routing", domain: "Talent Acquisition", fn: "Sourcing", scope: [], status: "Draft", personas: [], trigger: "On job publish", priority: "Low", source: POLICY_SOURCE.SOURCING, controlledAction: "Automated Sourcing" },
-  { id: "p21", name: "Rehire Cooling-Off", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Rehire Candidates"], status: "Active", personas: ["Recruiter"], trigger: "On candidate sourced", source: POLICY_SOURCE.SOURCING, controlledAction: "Candidate Sourcing" },
+  { id: "p23", name: "Company Exclusion", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: [], status: "Active", personas: ["Recruiter"], trigger: "On candidate sourced", priority: "High", source: POLICY_SOURCE.SOURCING, controlledAction: "Candidate Sourcing", configMode: "v3" },
+  { id: "p17", name: "Candidate Consent Gate", type: "Guardrail", domain: "Compliance", fn: "Data Privacy", scope: [], status: "Active", personas: ["Candidate"], trigger: "On candidate sourced", source: POLICY_SOURCE.SOURCING, controlledAction: "Candidate Sourcing", configMode: "v3" },
+  { id: "p18", name: "Current Employee Exclusion", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Current Employees"], status: "Active", personas: ["Recruiter"], trigger: "On candidate sourced", mandatory: true, source: POLICY_SOURCE.SOURCING, controlledAction: "Candidate Sourcing", configMode: "v3" },
+  { id: "p19", name: "Country Sourcing Restriction", type: "Guardrail", domain: "Compliance", fn: "Data Privacy", scope: [], status: "Active", personas: ["Recruiter"], trigger: "On candidate sourced", source: POLICY_SOURCE.SOURCING, controlledAction: "Candidate Sourcing", configMode: "v3" },
+  { id: "p20", name: "Job Family Suppression", type: "Routing", domain: "Talent Acquisition", fn: "Sourcing", scope: [], status: "Draft", personas: [], trigger: "On job publish", priority: "Low", source: POLICY_SOURCE.SOURCING, controlledAction: "Automated Sourcing", configMode: "v3" },
+  { id: "p21", name: "Rehire", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: [], status: "Active", personas: ["Recruiter"], trigger: "On candidate sourced", source: POLICY_SOURCE.SOURCING, controlledAction: "Candidate Sourcing", configMode: "v3" },
 ];
 
 const WORKFLOWS_SEED = [
   { id: "wf-1", name: "Interview Scheduling Flow", type: "Workflow", stage: "Pre-Interview", status: "Active", policies: ["p22", "p1"] },
-  { id: "wf-2", name: "Candidate Sourcing Pipeline", type: "Pipeline", stage: "Sourcing", status: "Active", policies: ["p2", "p17", "p18", "p19", "p20", "p21"] },
+  { id: "wf-2", name: "Candidate Sourcing Pipeline", type: "Pipeline", stage: "Sourcing", status: "Active", policies: ["p2", "p17", "p18", "p19", "p20", "p21", "p23"] },
   { id: "wf-4", name: "Offer Management Flow", type: "Workflow", stage: "Offer", status: "Active", policies: ["p2", "p12", "p13"] },
   { id: "wf-7", name: "India Application Compliance Screen", type: "Pipeline", stage: "Screening", status: "Active", policies: ["p8", "p9", "p10", "p11", "p16"] },
   { id: "wf-8", name: "No-Poach Enforcement Flow", type: "Workflow", stage: "Sourcing", status: "Active", policies: ["p2", "p12", "p13", "p14", "p15", "p16"] },
@@ -582,8 +782,23 @@ function RuleBranchHeader({ ruleNumber, kind, onRemove }) {
   );
 }
 
-function seedRuleForPolicy(existing, type) {
+function RuleBranchTriggerField({ trigger, onChange }) {
+  return (
+    <Field label="Trigger" hint="When this rule is evaluated in the workflow">
+      <SimpleSelect value={trigger || TRIGGERS[0]} onChange={onChange} options={TRIGGERS} />
+    </Field>
+  );
+}
+
+function seedRuleForPolicy(existing, type, configMode = "policy") {
+  const defaultTrigger = existing?.trigger || defaultTriggerForPolicy(existing?.name) || TRIGGERS[0];
+  const seed = buildSeedRuleForPolicy(existing, type, configMode);
+  return configMode === "v3" && seed?.branches ? finalizeSeedBranches(seed, defaultTrigger) : seed;
+}
+
+function buildSeedRuleForPolicy(existing, type, configMode = "policy") {
   const name = normalizeText(existing?.name);
+  const defaultTrigger = existing?.trigger || defaultTriggerForPolicy(existing?.name) || TRIGGERS[0];
   const outcome = (key, fallbackIndex = 0) => type.outcomes.find((item) => item.key === key)?.key || type.outcomes[fallbackIndex]?.key || type.outcomes[0].key;
   const base = {
     row: { source: "Country / Region", operator: "IS IN", value: "EU / GDPR Countries" },
@@ -591,7 +806,31 @@ function seedRuleForPolicy(existing, type) {
     elseOutcome: type.outcomes[1]?.key || type.outcomes[0].key,
     notify: false,
   };
-  const allow = outcome("Allow");
+
+  /* ---- V3: per-rule triggers + temporal no-poach ---- */
+  if (configMode === "v3") {
+    if (name.includes("alias & subsidiary")) {
+      return finalizeSeedBranches(buildNoPoachTemporalRules(type, {
+        matchRows: [{ source: "Company (via UAN/EPFO)", operator: "IS IN", value: "No-Poach — Tier 1 (aliases + subsidiaries)" }],
+        matchLabel: "alias or subsidiary of a Tier 1 protected client",
+        applyReason: "Alias or subsidiary of a Tier 1 protected client (EPFO UAN verified).",
+      }), defaultTrigger);
+    }
+    if (name.includes("tier 2 cooling-off")) {
+      return finalizeSeedBranches(buildNoPoachTemporalRules(type, {
+        matchRows: TIER2_COOLING_OFF_MATCH_ROWS,
+        matchLabel: "Tier 2 protected client within cooling-off period",
+        applyReason: "Departed a Tier 2 protected client within the applicable cooling-off period.",
+      }), defaultTrigger);
+    }
+    if (name.includes("tier 1 block") || (name.includes("no-poach") && name.includes("tier 1"))) {
+      return finalizeSeedBranches(buildNoPoachTemporalRules(type, {
+        matchRows: [{ source: "Company (via UAN/EPFO)", operator: "IS IN", value: "No-Poach — Tier 1" }],
+        matchLabel: "Tier 1 protected client match",
+        applyReason: "Currently employed by a Tier 1 protected client (EPFO UAN verified).",
+      }), defaultTrigger);
+    }
+  }
 
   /* ---- EPFO / India verification ---- */
   if (name.includes("do-not-hire employer")) {
@@ -599,7 +838,6 @@ function seedRuleForPolicy(existing, type) {
       { kind: "IF", rows: [{ source: "Company (via UAN/EPFO)", operator: "IS IN", value: "Do Not Hire (DNH) List" }],
         outcome: outcome("Hard Stop"), reason: "Current or past employer is on the Do-Not-Hire list (EPFO UAN verified).",
         actions: ["Create Case"], notifications: [{ persona: "Recruiter", template: "Recruiter: Do-Not-Hire Match" }] },
-      { kind: "ELSE", outcome: allow },
     ] };
   }
   if (name.includes("do-not-hire alias")) {
@@ -607,7 +845,6 @@ function seedRuleForPolicy(existing, type) {
       { kind: "IF", rows: [{ source: "Company (via UAN/EPFO)", operator: "IS IN", value: "DNH List — aliases" }],
         outcome: outcome("Soft Stop"), reason: "Employment history matches an alias of a Do-Not-Hire organization.",
         notifications: [{ persona: "Recruiter", template: "Recruiter: Do-Not-Hire Match" }] },
-      { kind: "ELSE", outcome: allow },
     ] };
   }
   if (name.includes("resume vs uan")) {
@@ -615,18 +852,16 @@ function seedRuleForPolicy(existing, type) {
       { kind: "IF", rows: [{ source: "Company (via Resume/Application)", operator: "NOT SAME AS", value: "Company (via UAN/EPFO)" }],
         outcome: outcome("Hard Stop"), reason: "Resume employment history does not match EPFO UAN records.",
         actions: ["Create Case"], notifications: [{ persona: "Compliance Reviewer", template: "Recruiter: UAN / Resume Mismatch" }] },
-      { kind: "ELSE", outcome: allow },
     ] };
   }
   if (name.includes("rehire performance")) {
     return { branches: [
       { kind: "IF", groups: [[{ source: "Rehire Flag", operator: "EQUALS", value: "Yes" }, { source: "Performance Outcome", operator: "EQUALS", value: "5" }]],
         outcome: outcome("Hard Stop"), reason: "Rehire candidate with lowest performance rating (5)." },
-      { kind: "ELSE IF", groups: [[{ source: "Days Since Last Working Day", operator: "LESS THAN", value: "180" }], [{ source: "Performance Outcome", operator: "IS IN", value: "1, 2, 3, 4" }]],
+      { kind: "ELSE IF", groups: [[{ source: "Days Since Last Working Day", operator: "LESS THAN", value: "@rehireDepartureSoftStopDays" }], [{ source: "Performance Outcome", operator: "IS IN", value: "1, 2, 3, 4" }]],
         outcome: outcome("Soft Stop"), reason: "Recent departure (<6 months) with performance 1–4." },
-      { kind: "ELSE IF", groups: [[{ source: "Days Since Last Working Day", operator: "BETWEEN", value: "365 – 1095" }], [{ source: "Performance Outcome", operator: "IS IN", value: "1, 2, 3, 4" }]],
+      { kind: "ELSE IF", groups: [[{ source: "Days Since Last Working Day", operator: "BETWEEN", value: "@rehireDepartureMonitorMinDays – @rehireDepartureMonitorMaxDays" }], [{ source: "Performance Outcome", operator: "IS IN", value: "1, 2, 3, 4" }]],
         outcome: outcome("Monitor"), reason: "Departure 1–3 years ago with performance 1–4." },
-      { kind: "ELSE", outcome: allow },
     ] };
   }
 
@@ -636,7 +871,6 @@ function seedRuleForPolicy(existing, type) {
       { kind: "IF", rows: [{ source: "Company (via Resume/Application)", operator: "NOT SAME AS", value: "Company (via UAN/EPFO)" }],
         outcome: outcome("Hard Stop"), reason: "Suspected concealment of current employment with a Tier 1 protected client.",
         actions: ["Create Case"], notifications: [{ persona: "Compliance Reviewer", template: "Legal: No-Poach Confirmation Required" }] },
-      { kind: "ELSE", outcome: allow },
     ] };
   }
   if (name.includes("alias & subsidiary")) {
@@ -645,16 +879,14 @@ function seedRuleForPolicy(existing, type) {
         outcome: outcome("Soft Stop"), reason: "Alias or subsidiary of a Tier 1 protected client (EPFO UAN verified).",
         requiresApproval: true, approver: "Legal", deferToStage: "Offer",
         notifications: [{ persona: "Compliance Reviewer", template: "Legal: No-Poach Confirmation Required" }] },
-      { kind: "ELSE", outcome: allow },
     ] };
   }
   if (name.includes("tier 2 cooling-off")) {
     return { branches: [
-      { kind: "IF", rows: [{ source: "Company (via UAN/EPFO)", operator: "IS IN", value: "No-Poach — Tier 2" }],
+      { kind: "IF", rows: TIER2_COOLING_OFF_MATCH_ROWS,
         outcome: outcome("Soft Stop"), reason: "Departed a Tier 2 protected client within the applicable cooling-off period.",
         requiresApproval: true, approver: "Legal", deferToStage: "Offer",
         notifications: [{ persona: "Compliance Reviewer", template: "Legal: No-Poach Confirmation Required" }] },
-      { kind: "ELSE", outcome: allow },
     ] };
   }
   if (name.includes("msa-expiry")) {
@@ -668,7 +900,6 @@ function seedRuleForPolicy(existing, type) {
     return { branches: [
       { kind: "IF", groups: [[{ source: "Company (via UAN/EPFO)", operator: "IS IN", value: "No-Poach — Tier 1" }], [{ source: "Rehire Flag", operator: "EQUALS", value: "Yes" }]],
         outcome: outcome("Monitor"), reason: "Historical employer match — departure predates agreement OR cooling-off well elapsed." },
-      { kind: "ELSE", outcome: allow },
     ] };
   }
   if (name.includes("no-poach")) {
@@ -677,45 +908,58 @@ function seedRuleForPolicy(existing, type) {
         outcome: outcome("Soft Stop"), reason: "Currently employed by a Tier 1 protected client (EPFO UAN verified).",
         requiresApproval: true, approver: "Legal", deferToStage: "Offer",
         notifications: [{ persona: "Compliance Reviewer", template: "Legal: No-Poach Confirmation Required" }] },
-      { kind: "ELSE", outcome: allow },
     ] };
   }
 
   /* ---- Sourcing Agent (PDF 2) ---- */
+  if (name.includes("company exclusion")) {
+    return { branches: [
+      { kind: "IF", rows: [{ source: "Company (Current / Past)", operator: "IS IN", value: "Competitor Exclusion List" }],
+        outcome: outcome("Block"), reason: "Current employer on competitor exclusion list for this tenant, job family, and location." },
+      { kind: "ELSE IF", rows: [{ source: "Company (Current / Past)", operator: "IS IN", value: "Fraud / Disqualified Company List" }],
+        outcome: outcome("Block"), reason: "Current or past employer on fraud, blacklist, or disqualified company list." },
+    ] };
+  }
   if (name.includes("consent gate")) {
     return { branches: [
-      { kind: "IF", rows: [{ source: "Consent Status", operator: "NOT EQUALS", value: "Granted" }],
-        outcome: outcome("Block"), reason: "Candidate has not granted sourcing/outreach consent.",
+      { kind: "IF", rows: [{ source: "Consent Status", operator: "EQUALS", value: "Opted Out" }],
+        outcome: outcome("Block"), reason: "Candidate opted out — outreach prohibited in all jurisdictions." },
+      { kind: "ELSE IF", groups: [[
+        { source: "Country / Region", operator: "IS IN", value: "EU / GDPR Countries" },
+        { source: "Consent Status", operator: "NOT EQUALS", value: "Granted" },
+      ]],
+        outcome: outcome("Block"), reason: "GDPR jurisdiction requires explicit consent before automated outreach.",
         notifications: [{ persona: "Candidate", template: "Candidate: Application Status Update" }] },
-      { kind: "ELSE", outcome: allow },
     ] };
   }
   if (name.includes("current employee exclusion")) {
     return { branches: [
       { kind: "IF", rows: [{ source: "Employment Status", operator: "EQUALS", value: "Current Employee" }],
         outcome: outcome("Block"), reason: "Current employees are excluded from external sourcing (mandatory policy)." },
-      { kind: "ELSE", outcome: allow },
     ] };
   }
   if (name.includes("country sourcing")) {
     return { branches: [
       { kind: "IF", rows: [{ source: "Country / Region", operator: "IS IN", value: "Restricted Countries" }],
         outcome: outcome("Block"), reason: "Automated sourcing is restricted in this jurisdiction." },
-      { kind: "ELSE", outcome: allow },
     ] };
   }
   if (name.includes("job family suppression")) {
     return { branches: [
       { kind: "IF", rows: [{ source: "Job Family", operator: "IS IN", value: "Suppressed Families" }],
-        outcome: outcome("Skip", 1), reason: "Job family suppressed for automated sourcing." },
-      { kind: "ELSE", outcome: outcome("Advance") },
+        outcome: outcome("Skip", 1), reason: "Job family suppressed for automated sourcing — agent will not activate." },
     ] };
   }
-  if (name.includes("rehire cooling-off")) {
+  if (name.includes("rehire") && !name.includes("performance") && !name.includes("protected-client")) {
     return { branches: [
-      { kind: "IF", groups: [[{ source: "Rehire Flag", operator: "EQUALS", value: "Yes" }], [{ source: "Days Since Last Working Day", operator: "LESS THAN", value: "90" }]],
-        outcome: outcome("Soft Stop"), reason: "Rehire attempted within the cooling-off window." },
-      { kind: "ELSE", outcome: allow },
+      { kind: "IF", rows: [{ source: "Do Not Rehire Flag", operator: "EQUALS", value: "Yes" }],
+        outcome: outcome("Block"), reason: "Candidate marked do-not-rehire in CRM — excluded from all segments and outreach." },
+      { kind: "ELSE IF", rows: [{ source: "Days Since Last Interview", operator: "LESS THAN", value: "@interviewCoolOffDays" }],
+        outcome: outcome("Block"), reason: "Recently interviewed within configured cool-off window (default 6 months; overridable per tenant/job family/location)." },
+      { kind: "ELSE IF", rows: [{ source: "Days Since Last Application", operator: "LESS THAN", value: "@applicantRecencyDays" }],
+        outcome: outcome("Block"), reason: "Past applicant within recency window — not eligible for sourcing outreach." },
+      { kind: "ELSE IF", rows: [{ source: "Pipeline Status", operator: "IS IN", value: "Interviewing, Offered, Active Pipeline" }],
+        outcome: outcome("Block"), reason: "Candidate already active in an open pipeline stage." },
     ] };
   }
 
@@ -749,10 +993,27 @@ function seedRuleForPolicy(existing, type) {
   /* ---- Original demo policies ---- */
   if (name.includes("recording restriction")) {
     return { branches: [
-      { kind: "IF", rows: [{ source: "Country / Region", operator: "IS IN", value: "EU / GDPR Countries" }],
-        outcome: outcome("Block"), controlledAction: "Interview Recording",
-        notifications: [{ persona: "Interviewer", template: NOTIFY_TEMPLATES[0] }] },
-      { kind: "ELSE", outcome: outcome("Allow"), controlledAction: "Interview Recording" },
+      {
+        kind: "IF",
+        orGate: true,
+        groups: [
+          [{ source: "Interviewer Country / Region", operator: "IS IN", value: "Restricted Countries" }],
+          [{ source: "Candidate Country / Region", operator: "IS IN", value: "Restricted Countries" }],
+          [{ source: "Job Location Country / Region", operator: "IS IN", value: "Restricted Countries" }],
+        ],
+        outcome: outcome("Block"),
+        controlledAction: "Interview Recording",
+        reason: "Any checked geographic dimension is in a restricted recording jurisdiction (OR-gate).",
+        notifications: [{ persona: "Interviewer", template: NOTIFY_TEMPLATES[0] }],
+      },
+      {
+        kind: "ELSE IF",
+        rows: [{ source: "Recording Context Complete", operator: "EQUALS", value: "No" }],
+        outcome: outcome("Block"),
+        controlledAction: "Interview Recording",
+        reason: "Country context unavailable — recording blocked by fallback policy.",
+        notifications: [{ persona: "Interviewer", template: NOTIFY_TEMPLATES[0] }],
+      },
     ] };
   }
   if (name.includes("fit-score") || name.includes("fast track")) {
@@ -1202,7 +1463,169 @@ function ConditionGateLabel({ orGate, onToggle, showToggle = true, staticLabel =
   );
 }
 
-function ConditionRows({ rows, orGate, setOrGate, onUpdateRow, onRemoveRow, onAddRow, onSetGroupOperator }) {
+function parseValueParameterParts(value) {
+  const text = String(value || "");
+  if (!text.includes("@")) return [{ type: "literal", text }];
+  const parts = [];
+  const regex = /@([A-Za-z0-9_]+)/g;
+  let lastIndex = 0;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ type: "literal", text: text.slice(lastIndex, match.index) });
+    }
+    parts.push({ type: "param", key: match[1] });
+    lastIndex = regex.lastIndex;
+  }
+  if (lastIndex < text.length) {
+    parts.push({ type: "literal", text: text.slice(lastIndex) });
+  }
+  return parts.length ? parts : [{ type: "literal", text: "" }];
+}
+
+function removeParameterFromValue(value, key) {
+  let next = String(value).replace(formatParameterRef(key), "");
+  next = next.replace(/\s*[–—-]\s*/g, " – ").replace(/^\s*–\s*|\s*–\s*$/g, "").trim();
+  return next;
+}
+
+function ParameterInsertMenu({ parameters, paramKey, onSelect, onClearLiteral, hasParameter }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="absolute right-0.5 top-1/2 h-7 w-7 -translate-y-1/2 rounded-md font-mono text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
+          title="Insert parameter"
+        >
+          (x)
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-80">
+        <DropdownMenuLabel>Parameters</DropdownMenuLabel>
+        {parameters.length === 0 ? (
+          <DropdownMenuItem disabled>No parameters registered</DropdownMenuItem>
+        ) : (
+          parameters.map((param) => (
+            <DropdownMenuItem
+              key={param.key}
+              onClick={() => onSelect(formatParameterRef(param.key))}
+              className={cn(param.key === paramKey && "bg-primary/10")}
+            >
+              <div className="min-w-0">
+                <div className="font-medium">{param.label}</div>
+                <div className="text-xs text-muted-foreground">
+                  @{param.key} · default {param.value}{param.unit ? ` ${param.unit}` : ""}
+                </div>
+              </div>
+            </DropdownMenuItem>
+          ))
+        )}
+        {hasParameter && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={onClearLiteral}>Use literal value</DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function ConditionValueField({ value, onChange, parameters = [], allowParameters = false, placeholder = "value or list reference" }) {
+  if (!allowParameters) {
+    return (
+      <Input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+      />
+    );
+  }
+
+  const parts = parseValueParameterParts(value);
+  const hasParameter = parts.some((part) => part.type === "param");
+  const isSingleParameter = parts.length === 1 && parts[0].type === "param";
+  const singleParam = isSingleParameter ? getParameterByKey(parameters, parts[0].key) : null;
+
+  if (isSingleParameter) {
+    return (
+      <div className="relative flex h-9 min-w-0 items-center rounded-md border border-input bg-background pl-2.5 pr-9 shadow-sm">
+        <Badge variant="secondary" className="h-6 max-w-full gap-1 pr-1 font-normal">
+          <span className="truncate">{singleParam?.label || parts[0].key}</span>
+          <button
+            type="button"
+            className="shrink-0 rounded-sm text-muted-foreground hover:text-foreground"
+            onClick={() => onChange("")}
+            aria-label="Remove parameter"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </Badge>
+        <ParameterInsertMenu
+          parameters={parameters}
+          paramKey={parts[0].key}
+          onSelect={onChange}
+          onClearLiteral={() => onChange("")}
+          hasParameter
+        />
+      </div>
+    );
+  }
+
+  if (hasParameter) {
+    return (
+      <div className="relative flex h-9 min-w-0 items-center gap-1 overflow-hidden rounded-md border border-input bg-background px-2.5 pr-9 shadow-sm">
+        {parts.map((part, index) => (
+          part.type === "param" ? (
+            <Badge key={`${part.key}-${index}`} variant="secondary" className="h-6 shrink-0 gap-1 pr-1 font-normal">
+              <span className="max-w-[7rem] truncate">{getParameterByKey(parameters, part.key)?.label || part.key}</span>
+              <button
+                type="button"
+                className="shrink-0 rounded-sm text-muted-foreground hover:text-foreground"
+                onClick={() => onChange(removeParameterFromValue(value, part.key))}
+                aria-label="Remove parameter"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          ) : (
+            <span key={`lit-${index}`} className="shrink-0 text-xs text-muted-foreground">{part.text.trim()}</span>
+          )
+        ))}
+        <ParameterInsertMenu
+          parameters={parameters}
+          paramKey=""
+          onSelect={onChange}
+          onClearLiteral={() => onChange("")}
+          hasParameter
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative min-w-0">
+      <Input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="pr-9"
+      />
+      <ParameterInsertMenu
+        parameters={parameters}
+        paramKey=""
+        onSelect={onChange}
+        onClearLiteral={() => onChange("")}
+        hasParameter={false}
+      />
+    </div>
+  );
+}
+
+function ConditionRows({ rows, orGate, setOrGate, onUpdateRow, onRemoveRow, onAddRow, onSetGroupOperator, parameters = [], allowParameters = false }) {
   const groupOperator = rows[0]?.operator || OPERATORS[0];
   const isFieldComparison = FIELD_COMPARISON_OPERATORS.has(groupOperator);
 
@@ -1231,7 +1654,12 @@ function ConditionRows({ rows, orGate, setOrGate, onUpdateRow, onRemoveRow, onAd
                   placeholder="compare to field…"
                 />
               ) : (
-                <Input value={row.value} onChange={(e) => onUpdateRow(row.id, { value: e.target.value })} placeholder="value or list reference" />
+                <ConditionValueField
+                  value={row.value}
+                  onChange={(v) => onUpdateRow(row.id, { value: v })}
+                  parameters={parameters}
+                  allowParameters={allowParameters}
+                />
               )}
             </div>
             <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive" onClick={() => onRemoveRow(row.id)}>
@@ -1293,7 +1721,7 @@ function seedBranch(type, spec) {
 
 function branchesFromSeed(type, seed) {
   if (seed.branches) return seed.branches.map((b) => seedBranch(type, b));
-  return [
+  const branches = [
     seedBranch(type, {
       kind: "IF",
       rows: [seed.row],
@@ -1301,8 +1729,11 @@ function branchesFromSeed(type, seed) {
       actions: seed.notify ? ["Create Case"] : [],
       notifications: seed.notify ? [{ persona: "Interviewer", template: NOTIFY_TEMPLATES[0] }] : [],
     }),
-    seedBranch(type, { kind: "ELSE", outcome: seed.elseOutcome }),
   ];
+  if (seed.elseOutcome && seed.elseOutcome !== "Allow") {
+    branches.push(seedBranch(type, { kind: "ELSE", outcome: seed.elseOutcome }));
+  }
+  return branches;
 }
 
 function BranchActionsEditor({ branch, type, onChange }) {
@@ -1499,7 +1930,7 @@ function BranchEnforcementEditor({ branch, onChange }) {
   );
 }
 
-function ConditionGroupBuilder({ groups, setGroups, orGate, setOrGate, singleGroup = false }) {
+function ConditionGroupBuilder({ groups, setGroups, orGate, setOrGate, singleGroup = false, parameters = [], allowParameters = false }) {
   function addRow(gid) {
     setGroups(groups.map((g) => {
       if (g.id !== gid) return g;
@@ -1548,6 +1979,8 @@ function ConditionGroupBuilder({ groups, setGroups, orGate, setOrGate, singleGro
                 onRemoveRow={(rid) => removeRow(g.id, rid)}
                 onAddRow={() => addRow(g.id)}
                 onSetGroupOperator={(operator) => setGroupOperator(g.id, operator)}
+                parameters={parameters}
+                allowParameters={allowParameters}
               />
             </div>
           </div>
@@ -1574,6 +2007,7 @@ const NAV_PRIMARY = [
 
 const NAV_SECONDARY = [
   { id: "lists", label: "Managed Lists", icon: ListChecks },
+  { id: "parameters", label: "Parameters", icon: SlidersHorizontal },
   { id: "types", label: "Policy Types", icon: Database },
   { id: "functions", label: "Business Functions", icon: Building2 },
 ];
@@ -1697,7 +2131,8 @@ function AppSidebar({ view, setView, setEditingId, collapsed, setCollapsed }) {
 
 export default function PolicyLibraryApp() {
   const [view, setView] = useState("library");
-  const [configMode, setConfigMode] = useState("policy");
+  const [configMode, setConfigMode] = useState("v3");
+  const [parameters, setParameters] = useState(PARAMETERS_SEED);
   const [policies, setPolicies] = useState(POLICIES_SEED);
   const [audiences, setAudiences] = useState(AUDIENCES_SEED);
   const [taxonomy, setTaxonomy] = useState(TAXONOMY_SEED);
@@ -1707,8 +2142,13 @@ export default function PolicyLibraryApp() {
 
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(""), 2200); }
 
-  function openBuilder(id) { setEditingId(id); setView("builder"); }
-  function newPolicy() { setEditingId("new"); setView("builder"); }
+  function openBuilder(id) {
+    const policy = policies.find((p) => p.id === id);
+    setConfigMode(policy?.configMode || "v3");
+    setEditingId(id);
+    setView("builder");
+  }
+  function newPolicy() { setConfigMode("v3"); setEditingId("new"); setView("builder"); }
   const inBuilder = view === "builder";
 
   return (
@@ -1749,6 +2189,7 @@ export default function PolicyLibraryApp() {
           />
         )}
         {view === "lists" && <ListsView />}
+        {view === "parameters" && <ParametersView parameters={parameters} setParameters={setParameters} showToast={showToast} />}
         {view === "types" && <TypesView />}
         {view === "functions" && <FunctionsView taxonomy={taxonomy} setTaxonomy={setTaxonomy} showToast={showToast} />}
         {view === "builder" && (
@@ -1759,6 +2200,7 @@ export default function PolicyLibraryApp() {
             audiences={audiences}
             setAudiences={setAudiences}
             taxonomy={taxonomy}
+            parameters={parameters}
             configMode={configMode}
             onExit={() => { setView("library"); setEditingId(null); }}
             showToast={showToast}
@@ -1844,7 +2286,9 @@ function LibraryView({ policies, openBuilder, newPolicy }) {
                   <span className="opacity-70">{p.domain}</span> <ChevronRight className="inline h-3 w-3 opacity-50" /> {p.fn}
                 </TableCell>
                 <TableCell>
-                  {p.trigger ? <span className="text-xs text-muted-foreground">{p.trigger}</span> : <span className="text-xs text-muted-foreground">—</span>}
+                  {getPolicyTriggerLabel(p) !== "—"
+                    ? <span className="text-xs text-muted-foreground">{getPolicyTriggerLabel(p)}</span>
+                    : <span className="text-xs text-muted-foreground">—</span>}
                 </TableCell>
                 <TableCell>
                   {p.scope.length === 0 && !p.scopeInline && !activeApplicability(p.applicability).length
@@ -1964,6 +2408,72 @@ function PlaceholderView({ title, description, icon: Icon }) {
 }
 
 /* ---------------- Managed Lists registry view ---------------- */
+
+function ParametersView({ parameters, setParameters, showToast }) {
+  function updateParameter(id, patch) {
+    setParameters(parameters.map((param) => param.id === id ? { ...param, ...patch } : param));
+    showToast?.("Parameter updated");
+  }
+
+  return (
+    <div className="mx-auto max-w-5xl px-6 py-6">
+      <h1 className="mb-1 text-2xl font-semibold tracking-tight">Parameters</h1>
+      <p className="mb-5 text-sm text-muted-foreground">
+        Tenant-scoped numeric thresholds referenced in V3 rule conditions as{" "}
+        <code className="rounded bg-muted px-1 py-0.5 text-xs">@parameterKey</code>.
+        Override defaults per tenant, job family, or location at runtime.
+      </p>
+
+      <Card className="overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead>Parameter</TableHead>
+              <TableHead>Key</TableHead>
+              <TableHead>Default</TableHead>
+              <TableHead>Scope</TableHead>
+              <TableHead>Used by</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {parameters.map((param) => (
+              <TableRow key={param.id}>
+                <TableCell>
+                  <div className="font-medium">{param.label}</div>
+                  <div className="mt-0.5 max-w-md text-xs text-muted-foreground">{param.description}</div>
+                </TableCell>
+                <TableCell>
+                  <Badge variant="outline" className="font-mono text-[11px]">{param.key}</Badge>
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={param.value}
+                      onChange={(e) => updateParameter(param.id, { value: e.target.value })}
+                      className="h-8 w-24 text-xs"
+                    />
+                    {param.unit && <span className="text-xs text-muted-foreground">{param.unit}</span>}
+                  </div>
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">{param.scope}</TableCell>
+                <TableCell>
+                  <div className="flex flex-wrap gap-1">
+                    {param.usedBy.map((name) => <Badge key={name} variant="secondary">{name}</Badge>)}
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </Card>
+
+      <Button variant="outline" className="mt-3.5 w-full border-dashed">
+        <Plus className="h-3.5 w-3.5" /> Register new parameter
+        <span className="ml-1 font-normal text-muted-foreground">— platform admin, config only</span>
+      </Button>
+    </div>
+  );
+}
 
 function ListsView() {
   return (
@@ -2147,7 +2657,7 @@ const SAMPLE_DOCS = [
   "Interview_Intelligence_SOP.pdf",
 ];
 
-function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, configMode, onExit, showToast }) {
+function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, parameters, configMode, onExit, showToast }) {
   const existing = policies.find((p) => p.id === policyId);
   const [activeTab, setActiveTab] = useState("context");
   const [configSection, setConfigSection] = useState("general");
@@ -2168,7 +2678,7 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, con
 
   const [typeKey, setTypeKey] = useState(existing?.type || "Guardrail");
   const type = POLICY_TYPES.find((t) => t.key === typeKey);
-  const seededRule = seedRuleForPolicy(existing, type);
+  const seededRule = seedRuleForPolicy(existing, type, configMode);
 
   const [domain, setDomain] = useState(existing?.domain || Object.keys(taxonomy)[0]);
   const [fn, setFn] = useState(existing?.fn || taxonomy[Object.keys(taxonomy)[0]][0]);
@@ -2188,23 +2698,22 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, con
 
   const controlledActionOptions = getControlledActionOptions(fn);
 
-  function syncBranchesForMode(nextMode) {
-    if (nextMode === "rule") {
-      setBranches((prev) => prev.map((b) => ({
-        ...b,
-        trigger: b.trigger || trigger,
-        controlledActions: getBranchControlledActions(b, controlledAction).length
-          ? getBranchControlledActions(b, controlledAction)
-          : defaultBranchControlledActions(fn, controlledAction, b.outcome),
-        controlledAction: (getBranchControlledActions(b, controlledAction)[0]
-          || defaultBranchControlledActions(fn, controlledAction, b.outcome)[0]
-          || ""),
-      })));
-    }
+  const modeInitializedRef = useRef(false);
+
+  function reloadBranchesForConfiguratorMode(nextMode) {
+    const seed = seedRuleForPolicy(existing, type, nextMode);
+    setBranches(hydrateBranchesForMode(
+      branchesFromSeed(type, seed),
+      { existing, fn, policyControlledAction: controlledAction, policyTrigger: trigger, configMode: nextMode },
+    ));
   }
 
   useEffect(() => {
-    syncBranchesForMode(configMode);
+    if (!modeInitializedRef.current) {
+      modeInitializedRef.current = true;
+      return;
+    }
+    reloadBranchesForConfiguratorMode(configMode);
   }, [configMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const linkedWorkflows = WORKFLOWS_SEED.filter((w) => w.policies.includes(existing?.id));
@@ -2245,9 +2754,20 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, con
     const scope = scopeBlocks.filter((b) => b.type === "audience").map((b) => b.audienceName);
     const scopeInline = scopeBlocks.some((b) => b.type === "custom");
     const base = { id: existing?.id || `p${uid++}`, name, type: typeKey, domain, fn, scope, scopeInline, status, personas, applicability, source: existing?.source, configMode, priority: mandatory ? undefined : priority, mandatory: mandatory || undefined };
+    const branchLevelRecord = {
+      ...base,
+      branchSettings: branches.map((b, index) => ({
+        index,
+        kind: b.kind,
+        controlledAction: b.controlledAction,
+        controlledActions: getBranchControlledActions(b),
+      })),
+    };
     const record = configMode === "rule"
+      ? { ...branchLevelRecord, trigger }
+      : configMode === "v3"
       ? {
-          ...base,
+          ...branchLevelRecord,
           trigger: branches[0]?.trigger || trigger,
           branchSettings: branches.map((b, index) => ({
             index,
@@ -2326,7 +2846,7 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, con
             generating={generating} generateFromAI={generateFromAI} aiGenerated={aiGenerated}
             name={name} typeKey={typeKey} domain={domain} fn={fn} scopeLabel={scopeLabel}
             personas={personas} branches={branches} type={type} trigger={trigger} controlledAction={controlledAction}
-            configMode={configMode}
+            configMode={configMode} parameters={parameters}
             description={description} onEditConfig={() => setActiveTab("configuration")}
           />
         )}
@@ -2349,6 +2869,7 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, con
 
         {activeTab === "configuration" && configMode === "rule" && (
           <ConfigurationTabRuleLevel
+            configuratorVariant="v2"
             configSection={configSection} setConfigSection={setConfigSection}
             typeKey={typeKey} setTypeKey={setTypeKey} type={type} setBranches={setBranches}
             domain={domain} setDomain={setDomain} fn={fn} setFn={setFn} taxonomy={taxonomy}
@@ -2357,6 +2878,23 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, con
             applicability={applicability} setApplicability={setApplicability}
             scopeBlocks={scopeBlocks} setScopeBlocks={setScopeBlocks}
             audiences={audiences}
+            branches={branches} addElseIf={addElseIf} removeBranch={removeBranch} updateBranch={updateBranch}
+            priority={priority} setPriority={setPriority} mandatory={mandatory} coPolicies={coPolicies}
+          />
+        )}
+
+        {activeTab === "configuration" && configMode === "v3" && (
+          <ConfigurationTabRuleLevel
+            configuratorVariant="v3"
+            configSection={configSection} setConfigSection={setConfigSection}
+            typeKey={typeKey} setTypeKey={setTypeKey} type={type} setBranches={setBranches}
+            domain={domain} setDomain={setDomain} fn={fn} setFn={setFn} taxonomy={taxonomy}
+            description={description} setDescription={setDescription}
+            personas={personas}
+            applicability={applicability} setApplicability={setApplicability}
+            scopeBlocks={scopeBlocks} setScopeBlocks={setScopeBlocks}
+            audiences={audiences}
+            parameters={parameters}
             branches={branches} addElseIf={addElseIf} removeBranch={removeBranch} updateBranch={updateBranch}
             priority={priority} setPriority={setPriority} mandatory={mandatory} coPolicies={coPolicies}
           />
@@ -2373,7 +2911,7 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, con
 /* ---------------- Context tab (AI-first) ---------------- */
 
 function ContextTab({ aiPrompt, setAiPrompt, documents, addDocument, removeDocument, generating, generateFromAI, aiGenerated,
-  name, typeKey, domain, fn, scopeLabel, personas, branches, type, trigger, controlledAction, configMode, description, onEditConfig }) {
+  name, typeKey, domain, fn, scopeLabel, personas, branches, type, trigger, controlledAction, configMode, parameters, description, onEditConfig }) {
   const availableDocs = SAMPLE_DOCS.filter((d) => !documents.includes(d));
 
   return (
@@ -2497,19 +3035,24 @@ function ContextTab({ aiPrompt, setAiPrompt, documents, addDocument, removeDocum
             )}
 
             <div>
-              <span className="text-xs text-muted-foreground">{configMode === "rule" ? "Rules" : "What it does"}</span>
+              <span className="text-xs text-muted-foreground">{(configMode === "rule" || configMode === "v3") ? "Rules" : "What it does"}</span>
               <div className="mt-2 space-y-2">
-                {branches.map((b) => (
+                {branches.map((b, bi) => (
                   <div key={b.id} className="flex items-start gap-2.5 text-sm">
-                    <span className="mt-0.5 w-14 shrink-0 text-xs text-muted-foreground">{b.kind}</span>
+                    <span className="mt-0.5 w-14 shrink-0 text-xs text-muted-foreground">
+                      {(configMode === "rule" || configMode === "v3") ? `Rule ${bi + 1}` : b.kind}
+                    </span>
                     <div className="flex-1">
-                      {configMode === "rule" && getBranchControlledActions(b).length > 0 && (
+                      {configMode === "v3" && b.trigger && (
+                        <p className="mb-0.5 text-[11px] text-muted-foreground">{b.trigger}</p>
+                      )}
+                      {(configMode === "rule" || configMode === "v3") && getBranchControlledActions(b).length > 0 && (
                         <p className="mb-0.5 text-[11px] text-muted-foreground">{formatControlledActionsList(getBranchControlledActions(b))}</p>
                       )}
                       {b.kind !== "ELSE" && b.groups?.flatMap((g) => g.rows).filter((r) => r.value).length > 0 ? (
                         <span className="text-muted-foreground">
                           {configMode === "policy" ? "When " : ""}
-                          {b.groups.flatMap((g) => g.rows).filter((r) => r.value).map((r) => `${r.source} ${r.operator} "${r.value}"`).join(" and ")}
+                          {b.groups.flatMap((g) => g.rows).filter((r) => r.value).map((r) => formatConditionClause(r, parameters)).join(" and ")}
                         </span>
                       ) : b.kind === "ELSE" ? (
                         <span className="text-muted-foreground">Otherwise</span>
@@ -2519,7 +3062,7 @@ function ContextTab({ aiPrompt, setAiPrompt, documents, addDocument, removeDocum
                       <span className="mx-1.5 text-muted-foreground">→</span>
                       <OutcomeWithAction
                         outcome={b.outcome}
-                        controlledActions={configMode === "rule" ? getBranchControlledActions(b) : undefined}
+                        controlledActions={(configMode === "rule" || configMode === "v3") ? getBranchControlledActions(b) : undefined}
                         controlledAction={configMode === "policy" ? controlledAction : undefined}
                       />
                       {b.requiresApproval && (
@@ -2602,7 +3145,6 @@ function ConfigurationTab({ configSection, setConfigSection, typeKey, setTypeKey
                   return (
                     <button key={t.key} onClick={() => { setTypeKey(t.key); setBranches([
                       createBranch(t, { kind: "IF" }),
-                      createBranch(t, { kind: "ELSE", outcome: t.outcomes[t.outcomes.length - 1].key }),
                     ]); }}
                       className={cn("flex flex-col items-center gap-1.5 rounded-lg border p-3 text-center transition-colors",
                         active ? SELECTED_CHIP_CLASSES : "hover:border-muted-foreground/40")}>
@@ -2778,12 +3320,14 @@ function ConfigurationTab({ configSection, setConfigSection, typeKey, setTypeKey
 
 /* ---------------- Configuration tab — rule-level variant ---------------- */
 
-function ConfigurationTabRuleLevel({ configSection, setConfigSection, typeKey, setTypeKey, type, setBranches,
+function ConfigurationTabRuleLevel({ configuratorVariant = "v2", configSection, setConfigSection, typeKey, setTypeKey, type, setBranches,
   domain, setDomain, fn, setFn, taxonomy, description, setDescription, personas,
   applicability, setApplicability,
-  scopeBlocks, setScopeBlocks, audiences,
+  scopeBlocks, setScopeBlocks, audiences, parameters = [],
   branches, addElseIf, removeBranch, updateBranch,
   priority, setPriority, mandatory, coPolicies }) {
+  const showPerRuleTrigger = configuratorVariant === "v3";
+  const configuratorLabel = configuratorVariant === "v3" ? "V3" : "V2";
   const controlledActionOptions = getControlledActionOptions(fn);
 
   function changeDomain(nextDomain) {
@@ -2835,7 +3379,6 @@ function ConfigurationTabRuleLevel({ configSection, setConfigSection, typeKey, s
                   return (
                     <button key={t.key} onClick={() => { setTypeKey(t.key); setBranches([
                       createBranch(t, { kind: "IF" }),
-                      createBranch(t, { kind: "ELSE", outcome: t.outcomes[t.outcomes.length - 1].key }),
                     ]); }}
                       className={cn("flex flex-col items-center gap-1.5 rounded-lg border p-3 text-center transition-colors",
                         active ? SELECTED_CHIP_CLASSES : "hover:border-muted-foreground/40")}>
@@ -2882,12 +3425,20 @@ function ConfigurationTabRuleLevel({ configSection, setConfigSection, typeKey, s
                     onRemove={() => removeBranch(b.id)}
                   />
                   <div className="space-y-3.5 p-3.5">
+                    {showPerRuleTrigger && (
+                      <RuleBranchTriggerField
+                        trigger={b.trigger}
+                        onChange={(v) => updateBranch(b.id, { trigger: v })}
+                      />
+                    )}
                     {b.kind !== "ELSE" && (
                       <ConditionGroupBuilder
                         groups={b.groups}
                         setGroups={(g) => updateBranch(b.id, { groups: g })}
                         orGate={b.orGate}
                         setOrGate={(v) => updateBranch(b.id, { orGate: v })}
+                        parameters={parameters}
+                        allowParameters={showPerRuleTrigger}
                       />
                     )}
                     <Field label={`Outcome (${typeKey})`}>
@@ -2934,7 +3485,7 @@ function ConfigurationTabRuleLevel({ configSection, setConfigSection, typeKey, s
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div><span className="mb-1 block text-xs text-muted-foreground">Type</span><Badge variant="outline">{typeKey}</Badge></div>
               <div><span className="mb-1 block text-xs text-muted-foreground">Product</span><span>{domain} <ChevronRight className="inline h-3 w-3 opacity-50" /> {fn}</span></div>
-              <div><span className="mb-1 block text-xs text-muted-foreground">Configurator</span><Badge variant="secondary">V2</Badge></div>
+              <div><span className="mb-1 block text-xs text-muted-foreground">Configurator</span><Badge variant="secondary">{configuratorLabel}</Badge></div>
               <ConflictResolutionSummary priority={priority} mandatory={mandatory} coPolicies={coPolicies} />
               <div><span className="mb-1 block text-xs text-muted-foreground">Personas</span>
                 {personas.length ? <div className="flex flex-wrap gap-1">{personas.map((p) => <Badge key={p} variant="outline">{p}</Badge>)}</div> : <span className="text-xs text-muted-foreground">Not set — derived at outcome level</span>}
@@ -2947,10 +3498,11 @@ function ConfigurationTabRuleLevel({ configSection, setConfigSection, typeKey, s
             <div>
               <span className="mb-2 block text-xs text-muted-foreground">Branches ({branches.length})</span>
               <div className="space-y-2.5">
-                {branches.map((b) => (
+                {branches.map((b, bi) => (
                   <div key={b.id} className="space-y-1">
                     <div className="flex flex-wrap items-center gap-2 text-xs">
                       <Badge variant={branchVariant(b.kind)}>{b.kind}</Badge>
+                      {showPerRuleTrigger && b.trigger && <Badge variant="outline">{b.trigger}</Badge>}
                       <ArrowRight className="h-3 w-3 text-muted-foreground" />
                       <OutcomeWithAction outcome={b.outcome} controlledActions={getBranchControlledActions(b)} />
                       {b.requiresApproval && (
