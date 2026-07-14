@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Fragment } from "react";
 import {
   Shield, GitBranch, Users, RefreshCw, MapPin, Database, FileText, Plus, Trash2,
   ChevronRight, Save, X, Check, ChevronDown,
@@ -107,6 +107,7 @@ const DATA_SOURCES = [
   "Performance Outcome", "Rehire Flag",
   "Do Not Rehire Flag", "Pipeline Status", "Legal Confirmation Status",
   "Offer Acceptance Status",
+  "Eye Track", "Voice Tone", "Facial Expressions",
 ];
 const OPERATORS = ["IS IN", "IS NOT IN", "EQUALS", "NOT EQUALS", "GREATER THAN", "LESS THAN", "BETWEEN", "MATCHES", "SAME AS", "NOT SAME AS"];
 // Operators that compare one data field against another field, rather than a static value.
@@ -434,6 +435,29 @@ const PARAMETERS_SEED = [
     description: "Upper bound for departure monitor band (1–3 years).",
     usedBy: ["Rehire Performance Screen"],
   },
+  {
+    id: "par-7",
+    key: "interviewFraud",
+    label: "Interview fraud signal",
+    type: "computed",
+    valueType: "boolean",
+    value: "true",
+    unit: null,
+    scope: "Interview screening",
+    description: "Dynamic boolean — true when all configured fraud signals are flagged.",
+    usedBy: ["Interview Fraud Detection"],
+    compute: {
+      orGate: false,
+      groups: [{
+        id: "cg-if-1",
+        rows: [
+          { id: "cr-if-1", source: "Eye Track", operator: "EQUALS", value: "Flagged" },
+          { id: "cr-if-2", source: "Voice Tone", operator: "EQUALS", value: "Flagged" },
+          { id: "cr-if-3", source: "Facial Expressions", operator: "EQUALS", value: "Flagged" },
+        ],
+      }],
+    },
+  },
 ];
 
 function formatParameterRef(key) {
@@ -453,12 +477,36 @@ function getParameterByKey(parameters, key) {
   return (parameters || []).find((param) => param.key === key);
 }
 
+function isComputedParameter(param) {
+  return param?.type === "computed";
+}
+
+function createBlankComputeGroups() {
+  return [{
+    id: uid++,
+    rows: [{ id: uid++, source: DATA_SOURCES[0], operator: "EQUALS", value: "" }],
+  }];
+}
+
+function formatComputedParameterSummary(param) {
+  if (!isComputedParameter(param)) return null;
+  return getComputedParameterClauses(param).join(param.compute?.orGate ? " OR " : " AND ");
+}
+
+function getComputedParameterClauses(param) {
+  if (!isComputedParameter(param)) return [];
+  const { groups = [] } = param.compute || {};
+  return groups.flatMap((group) => (group.rows || []).map((row) => `${row.source} ${row.operator} "${row.value || "…"}"`));
+}
+
 function formatConditionValue(value, parameters = []) {
   if (!value) return value;
   let display = String(value);
   parameters.forEach((param) => {
     const token = formatParameterRef(param.key);
-    const replacement = `${param.label} (${param.value}${param.unit ? ` ${param.unit}` : ""})`;
+    const replacement = isComputedParameter(param)
+      ? `${param.label} (computed)`
+      : `${param.label} (${param.value}${param.unit ? ` ${param.unit}` : ""})`;
     display = display.split(token).join(replacement);
   });
   return display;
@@ -1523,7 +1571,10 @@ function ParameterInsertMenu({ parameters, paramKey, onSelect, onClearLiteral, h
               <div className="min-w-0">
                 <div className="font-medium">{param.label}</div>
                 <div className="text-xs text-muted-foreground">
-                  @{param.key} · default {param.value}{param.unit ? ` ${param.unit}` : ""}
+                  @{param.key}
+                  {isComputedParameter(param)
+                    ? ` · ${formatComputedParameterSummary(param) || "computed"}`
+                    : ` · default ${param.value}${param.unit ? ` ${param.unit}` : ""}`}
                 </div>
               </div>
             </DropdownMenuItem>
@@ -2423,66 +2474,238 @@ function PlaceholderView({ title, description, icon: Icon }) {
 /* ---------------- Managed Lists registry view ---------------- */
 
 function ParametersView({ parameters, setParameters, showToast }) {
+  const [expandedId, setExpandedId] = useState(null);
+
   function updateParameter(id, patch) {
     setParameters(parameters.map((param) => param.id === id ? { ...param, ...patch } : param));
     showToast?.("Parameter updated");
+  }
+
+  function setParameterType(id, nextType) {
+    const param = parameters.find((item) => item.id === id);
+    if (!param) return;
+    if (nextType === "computed") {
+      updateParameter(id, {
+        type: "computed",
+        valueType: "boolean",
+        value: "true",
+        unit: null,
+        compute: param.compute || { orGate: false, groups: createBlankComputeGroups() },
+      });
+    } else {
+      updateParameter(id, {
+        type: "static",
+        valueType: undefined,
+        value: param.value === "true" ? "0" : (param.value || "0"),
+        unit: param.unit || "days",
+        compute: undefined,
+      });
+    }
+  }
+
+  function addParameter() {
+    const next = {
+      id: `par-${uid++}`,
+      key: `param${uid}`,
+      label: "New parameter",
+      type: "static",
+      value: "0",
+      unit: "days",
+      scope: "Tenant · Job family · Location",
+      description: "",
+      usedBy: [],
+    };
+    setParameters([...parameters, next]);
+    setExpandedId(next.id);
+    showToast?.("Parameter added");
   }
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-6">
       <h1 className="mb-1 text-2xl font-semibold tracking-tight">Parameters</h1>
       <p className="mb-5 text-sm text-muted-foreground">
-        Tenant-scoped numeric thresholds referenced in V3 rule conditions as{" "}
+        Tenant-scoped values referenced in V3 rule conditions as{" "}
         <code className="rounded bg-muted px-1 py-0.5 text-xs">@parameterKey</code>.
-        Override defaults per tenant, job family, or location at runtime.
+        Static parameters hold defaults; computed parameters resolve dynamically from other properties.
       </p>
 
       <Card className="overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
+              <TableHead className="w-8" />
               <TableHead>Parameter</TableHead>
               <TableHead>Key</TableHead>
               <TableHead>Default</TableHead>
               <TableHead>Scope</TableHead>
-              <TableHead>Used by</TableHead>
+              <TableHead className="text-right">Used by</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {parameters.map((param) => (
-              <TableRow key={param.id}>
-                <TableCell>
-                  <div className="font-medium">{param.label}</div>
-                  <div className="mt-0.5 max-w-md text-xs text-muted-foreground">{param.description}</div>
-                </TableCell>
-                <TableCell>
-                  <Badge variant="outline" className="font-mono text-[11px]">{param.key}</Badge>
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      value={param.value}
-                      onChange={(e) => updateParameter(param.id, { value: e.target.value })}
-                      className="h-8 w-24 text-xs"
-                    />
-                    {param.unit && <span className="text-xs text-muted-foreground">{param.unit}</span>}
-                  </div>
-                </TableCell>
-                <TableCell className="text-xs text-muted-foreground">{param.scope}</TableCell>
-                <TableCell>
-                  <div className="flex flex-wrap gap-1">
-                    {param.usedBy.map((name) => <Badge key={name} variant="secondary">{name}</Badge>)}
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
+            {parameters.map((param) => {
+              const computed = isComputedParameter(param);
+              const expanded = expandedId === param.id;
+              const computeClauses = getComputedParameterClauses(param);
+              return (
+                <Fragment key={param.id}>
+                  <TableRow className={cn(expanded && "border-b-0")}>
+                    <TableCell className="px-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground"
+                        onClick={() => setExpandedId(expanded ? null : param.id)}
+                        aria-label={expanded ? "Collapse parameter" : "Expand parameter"}
+                      >
+                        <ChevronDown className={cn("h-4 w-4 transition-transform", expanded && "rotate-180")} />
+                      </Button>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <div className="font-medium">{param.label}</div>
+                        <Badge variant={computed ? "default" : "outline"} className="text-[10px]">
+                          {computed ? "Computed" : "Static"}
+                        </Badge>
+                      </div>
+                      <div className="mt-0.5 max-w-md text-xs text-muted-foreground">{param.description}</div>
+                      {computed && computeClauses.length > 0 && (
+                        <div className="mt-2 flex flex-wrap items-center gap-1">
+                          {computeClauses.map((clause, index) => (
+                            <Fragment key={`${param.id}-clause-${index}`}>
+                              {index > 0 && (
+                                <span className="text-[10px] font-semibold uppercase text-muted-foreground">
+                                  {param.compute?.orGate ? "or" : "and"}
+                                </span>
+                              )}
+                              <Badge variant="outline" className="font-normal">{clause}</Badge>
+                            </Fragment>
+                          ))}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="font-mono text-[11px]">{param.key}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      {computed ? (
+                        <Badge variant="secondary" className="font-normal">Dynamic · boolean</Badge>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <Input
+                            value={param.value}
+                            onChange={(e) => updateParameter(param.id, { value: e.target.value })}
+                            className="h-8 w-24 bg-white text-xs"
+                          />
+                          {param.unit && <span className="text-xs text-muted-foreground">{param.unit}</span>}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{param.scope}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="group/usedby relative inline-flex justify-end">
+                        <span className="cursor-default rounded px-1.5 py-0.5 text-sm tabular-nums text-muted-foreground hover:bg-muted">
+                          {param.usedBy.length}
+                        </span>
+                        {param.usedBy.length > 0 && (
+                          <div className="pointer-events-none absolute right-0 top-full z-50 mt-1 hidden min-w-[12rem] rounded-md border bg-popover px-2.5 py-2 text-left shadow-md group-hover/usedby:block">
+                            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Used by</p>
+                            <div className="space-y-1">
+                              {param.usedBy.map((name) => (
+                                <div key={name} className="text-xs text-foreground">{name}</div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                  {expanded && (
+                    <TableRow className="bg-muted/10 hover:bg-muted/10">
+                      <TableCell colSpan={6} className="p-4">
+                        <div className="space-y-4">
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <Field label="Label">
+                              <Input
+                                value={param.label}
+                                onChange={(e) => updateParameter(param.id, { label: e.target.value })}
+                                className="bg-white"
+                              />
+                            </Field>
+                            <Field label="Key">
+                              <Input
+                                value={param.key}
+                                onChange={(e) => updateParameter(param.id, { key: e.target.value.replace(/\s+/g, "") })}
+                                className="bg-white font-mono text-sm"
+                              />
+                            </Field>
+                          </div>
+                          <Field label="Description">
+                            <Textarea
+                              value={param.description}
+                              onChange={(e) => updateParameter(param.id, { description: e.target.value })}
+                              rows={2}
+                              className="bg-white"
+                            />
+                          </Field>
+                          <Field label="Value type">
+                            <SimpleSelect
+                              whiteBg
+                              value={computed ? "computed" : "static"}
+                              onChange={(value) => setParameterType(param.id, value)}
+                              options={["static", "computed"]}
+                              labels={{ static: "Static default", computed: "Computed from properties" }}
+                            />
+                          </Field>
+                          {computed ? (
+                            <Field
+                              label="Compute when"
+                              hint="Parameter resolves to true when these conditions match (evaluated at runtime)."
+                            >
+                              <ConditionGroupBuilder
+                                groups={param.compute?.groups || createBlankComputeGroups()}
+                                setGroups={(groups) => updateParameter(param.id, {
+                                  compute: { ...(param.compute || { orGate: false }), groups },
+                                })}
+                                orGate={!!param.compute?.orGate}
+                                setOrGate={(orGate) => updateParameter(param.id, {
+                                  compute: { ...(param.compute || { groups: createBlankComputeGroups() }), orGate },
+                                })}
+                                singleGroup
+                              />
+                            </Field>
+                          ) : (
+                            <div className="grid gap-3 sm:grid-cols-[1fr_8rem]">
+                              <Field label="Default value">
+                                <Input
+                                  value={param.value}
+                                  onChange={(e) => updateParameter(param.id, { value: e.target.value })}
+                                  className="bg-white"
+                                />
+                              </Field>
+                              <Field label="Unit">
+                                <Input
+                                  value={param.unit || ""}
+                                  onChange={(e) => updateParameter(param.id, { unit: e.target.value })}
+                                  className="bg-white"
+                                  placeholder="days"
+                                />
+                              </Field>
+                            </div>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </Fragment>
+              );
+            })}
           </TableBody>
         </Table>
       </Card>
 
-      <Button variant="outline" className="mt-3.5 w-full border-dashed">
-        <Plus className="h-3.5 w-3.5" /> Register new parameter
-        <span className="ml-1 font-normal text-muted-foreground">— platform admin, config only</span>
+      <Button variant="outline" className="mt-3.5 w-full border-dashed" onClick={addParameter}>
+        <Plus className="h-3.5 w-3.5" /> Add parameter
       </Button>
     </div>
   );
