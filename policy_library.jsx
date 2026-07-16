@@ -2504,7 +2504,7 @@ function NavItem({ item, view, setView, setEditingId, navIconClass }) {
 }
 
 function EngineSwitcher({ engine, setEngine, setView, setEditingId, view }) {
-  const moreActive = view === "prioritization";
+  const moreActive = view === "prioritization" || view === "global_policy_view";
 
   return (
     <div className="flex rounded-lg border bg-muted/30 p-0.5">
@@ -2557,6 +2557,19 @@ function EngineSwitcher({ engine, setEngine, setView, setEditingId, view }) {
             <div className="min-w-0">
               <p className="text-sm font-medium">Prioritization</p>
               <p className="text-[11px] text-muted-foreground">Workflow-level policy order</p>
+            </div>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => {
+              setView("global_policy_view");
+              setEditingId(null);
+            }}
+            className="gap-2"
+          >
+            <Eye className="h-4 w-4 text-muted-foreground" />
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Global policy view</p>
+              <p className="text-[11px] text-muted-foreground">View of a non-admin user</p>
             </div>
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -2620,6 +2633,8 @@ export default function PolicyLibraryApp() {
   const [peopleTaxonomy, setPeopleTaxonomy] = useState(PEOPLE_TAXONOMY_SEED);
   const [editingId, setEditingId] = useState(null);
   const [toast, setToast] = useState("");
+  const [builderIsAdmin, setBuilderIsAdmin] = useState(true);
+  const [builderReturnView, setBuilderReturnView] = useState("library");
 
   const isPeople = engine === "people";
   const activePolicies = isPeople ? peoplePolicies : policies;
@@ -2634,14 +2649,21 @@ export default function PolicyLibraryApp() {
 
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(""), 2200); }
 
-  function openBuilder(id) {
+  function openBuilder(id, { isAdmin = true, returnView = "library" } = {}) {
+    setBuilderIsAdmin(isAdmin);
+    setBuilderReturnView(returnView);
     setEditingId(id);
     setView("builder");
   }
-  function newPolicy() { setEditingId("new"); setView("builder"); }
+  function newPolicy() {
+    setBuilderIsAdmin(true);
+    setBuilderReturnView("library");
+    setEditingId("new");
+    setView("builder");
+  }
   const inBuilder = view === "builder";
-  const inPrioritization = view === "prioritization";
-  const hideChrome = inBuilder || inPrioritization;
+  const inMorePage = view === "prioritization" || view === "global_policy_view";
+  const hideChrome = inBuilder || inMorePage;
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#f8f8fb] text-foreground">
@@ -2716,8 +2738,15 @@ export default function PolicyLibraryApp() {
           <WorkflowPrioritizationView
             policies={policies}
             onBack={() => setView("library")}
-            openBuilder={openBuilder}
+            openBuilder={(id) => openBuilder(id, { returnView: "prioritization" })}
             showToast={showToast}
+          />
+        )}
+        {view === "global_policy_view" && (
+          <GlobalPolicyView
+            policies={policies}
+            onBack={() => setView("library")}
+            openBuilder={(id) => openBuilder(id, { isAdmin: false, returnView: "global_policy_view" })}
           />
         )}
         {view === "builder" && (
@@ -2730,7 +2759,8 @@ export default function PolicyLibraryApp() {
             taxonomy={activeTaxonomy}
             parameters={activeParameters}
             engine={engine}
-            onExit={() => { setView("library"); setEditingId(null); }}
+            isAdmin={builderIsAdmin}
+            onExit={() => { setView(builderReturnView); setEditingId(null); }}
             showToast={showToast}
           />
         )}
@@ -2747,11 +2777,100 @@ export default function PolicyLibraryApp() {
 
 /* ---------------- Library view ---------------- */
 
+const GLOBAL_POLICY_VIEW_IDS = ["p18", "p22"]; // one Always-on / global, one normal
+
+function GlobalPolicyView({ policies, onBack, openBuilder }) {
+  const rows = GLOBAL_POLICY_VIEW_IDS
+    .map((id) => policies.find((p) => p.id === id))
+    .filter(Boolean);
+
+  return (
+    <div className="min-h-screen bg-[#f8f8fb]">
+      <div className="sticky top-0 z-20 border-b bg-white/90 px-6 py-4 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-7xl items-center gap-3">
+          <Button variant="outline" size="icon" className="h-8 w-8 shrink-0 bg-white shadow-sm" onClick={onBack} title="Back">
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <div className="min-w-0">
+            <h1 className="text-lg font-semibold tracking-tight">Global policy view</h1>
+          </div>
+        </div>
+      </div>
+
+      <div className="border-b bg-gray-50 px-6 py-4">
+        <div className="mx-auto max-w-7xl">
+          <p className="text-sm font-medium text-foreground">Non-admin user view</p>
+          <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+            Open a Global (Always-on) policy to see the view-only configurator. Non-global policies remain editable for this user.
+          </p>
+        </div>
+      </div>
+
+      <div className="mx-auto max-w-7xl px-6 py-6">
+        <Card className="overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Name</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Business Function</TableHead>
+                <TableHead>Trigger</TableHead>
+                <TableHead>Scope</TableHead>
+                <TableHead>Priority</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((p) => {
+                const isAlwaysOn = !!(p.global || p.mandatory);
+                return (
+                  <TableRow key={p.id} onClick={() => openBuilder(p.id)} className="cursor-pointer">
+                    <TableCell className="font-medium">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span>{p.name}</span>
+                        {isAlwaysOn ? (
+                          <Badge variant="secondary" className="border-violet-200 bg-violet-50 text-violet-700">Always-on</Badge>
+                        ) : (
+                          <Badge variant="outline">Editable</Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell><Badge variant="outline">{p.type}</Badge></TableCell>
+                    <TableCell className="text-muted-foreground">
+                      <span className="opacity-70">{p.domain}</span> <ChevronRight className="inline h-3 w-3 opacity-50" /> {p.fn}
+                    </TableCell>
+                    <TableCell>
+                      {getPolicyTriggerLabel(p) !== "—"
+                        ? <span className="text-xs text-muted-foreground">{getPolicyTriggerLabel(p)}</span>
+                        : <span className="text-xs text-muted-foreground">—</span>}
+                    </TableCell>
+                    <TableCell>
+                      {p.scope.length === 0 && !p.scopeInline && !activeApplicability(p.applicability).length
+                        ? <Badge variant="secondary">Global</Badge>
+                        : <div className="flex flex-wrap gap-1">
+                            {activeApplicability(p.applicability).map((a) => <Badge key={a.dim} variant="outline">{a.value}</Badge>)}
+                            {p.scope.map((s) => <Badge key={s} variant="outline">{s}</Badge>)}
+                            {p.scopeInline && <Badge variant="secondary">Custom group</Badge>}
+                          </div>}
+                    </TableCell>
+                    <TableCell><PriorityBadge policy={p} /></TableCell>
+                    <TableCell><StatusDot status={p.status} /></TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 const PRIORITIZATION_BANDS = ["Always-on", "High", "Medium", "Low"];
 
 const PRIORITIZATION_DEMO_WORKFLOW = {
   id: "wf-prio-demo",
-  name: "Candidate Sourcing Pipeline",
+  name: "Application Flow - Technical Jobs",
   type: "Pipeline",
   stage: "Sourcing",
   status: "Active",
@@ -2799,7 +2918,6 @@ function WorkflowPrioritizationView({ policies, onBack, openBuilder, showToast }
   }
 
   const wf = PRIORITIZATION_DEMO_WORKFLOW;
-  const totalPolicies = PRIORITIZATION_BANDS.reduce((n, b) => n + bands[b].length, 0);
 
   return (
     <div className="min-h-screen bg-[#f8f8fb]">
@@ -2827,22 +2945,11 @@ function WorkflowPrioritizationView({ policies, onBack, openBuilder, showToast }
 
       <div className="mx-auto max-w-3xl px-6 py-6">
         <Card>
-          <CardHeader className="flex-row items-start justify-between gap-3 space-y-0 border-b bg-muted/20 py-4">
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-background text-primary shadow-sm">
-                <Workflow className="h-4 w-4" />
-              </div>
-              <div>
-                <CardTitle className="text-base">{wf.name}</CardTitle>
-                <CardDescription className="mt-1 flex flex-wrap items-center gap-2">
-                  <Badge variant="outline">{wf.type}</Badge>
-                  <span>{wf.stage}</span>
-                  <span className="text-muted-foreground">·</span>
-                  <span>{totalPolicies} policies</span>
-                </CardDescription>
-              </div>
+          <CardHeader className="flex-row items-center gap-3 space-y-0 border-b bg-muted/20 py-4">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-background text-primary shadow-sm">
+              <Workflow className="h-4 w-4" />
             </div>
-            <StatusDot status={wf.status} />
+            <CardTitle className="text-base">{wf.name}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-5 p-4">
             {PRIORITIZATION_BANDS.map((band) => {
@@ -3780,9 +3887,6 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, par
           </div>
 
           <div className="flex flex-1 items-center justify-end gap-2">
-            {configReadOnly && (
-              <Badge variant="secondary" className="hidden sm:inline-flex">View only</Badge>
-            )}
             {status === "Draft" ? (
               <Button variant="outline" disabled={configReadOnly} onClick={() => setStatus("Active")}>Publish</Button>
             ) : (
@@ -3801,6 +3905,17 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, par
           </div>
         </div>
       </div>
+
+      {configReadOnly && (
+        <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-6 py-3">
+          <div className="mx-auto max-w-6xl">
+            <p className="text-sm font-medium text-amber-950">View only — global policy</p>
+            <p className="mt-1 text-xs leading-relaxed text-amber-900/80">
+              This policy is global and always-on. Its configuration cannot be edited unless you are a platform admin.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="flex min-h-0 flex-1 items-stretch overflow-visible">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -3867,11 +3982,6 @@ function ContextTab({ aiPrompt, setAiPrompt, documents, addDocument, removeDocum
 
   return (
     <div className={cn("mx-auto grid max-w-6xl flex-1 gap-6 overflow-auto px-6 py-6", aiGenerated && "xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)] xl:items-stretch")}>
-      {readOnly && (
-        <div className="col-span-full">
-          <PolicyConfigReadOnlyNotice />
-        </div>
-      )}
       <Card className={cn("flex min-h-[calc(100vh-11rem)] flex-col overflow-hidden", readOnly && "pointer-events-none select-none opacity-60")}>
         <CardHeader className="shrink-0 border-b bg-gradient-to-br from-primary/[0.08] via-background to-background py-5">
           <div className="flex items-center gap-2">
@@ -4260,17 +4370,6 @@ function GlobalAlwaysOnBanner({ isGlobal, setIsGlobal, mandatory = false }) {
   );
 }
 
-function PolicyConfigReadOnlyNotice() {
-  return (
-    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
-      <p className="text-sm font-medium text-amber-950">View only — global policy</p>
-      <p className="mt-1 text-xs leading-relaxed text-amber-900/80">
-        This policy is global and always-on. Its configuration cannot be edited unless you are a platform admin.
-      </p>
-    </div>
-  );
-}
-
 function ConfigurationTabRuleLevel({ configSection, setConfigSection, typeKey, setTypeKey, type, setBranches,
   domain, setDomain, fn, setFn, taxonomy, description, setDescription, personas, policyName = "Untitled Policy",
   applicability, setApplicability,
@@ -4322,7 +4421,6 @@ function ConfigurationTabRuleLevel({ configSection, setConfigSection, typeKey, s
         <FieldHintProvider hintAsTooltip>
         {configSection === "general" && (
           <SectionCard title="General" subtitle="General settings for the policy" icon={FileText}>
-            {readOnly && <PolicyConfigReadOnlyNotice />}
             <GlobalAlwaysOnBanner isGlobal={isGlobal} setIsGlobal={setIsGlobal} mandatory={mandatory} />
 
             <div className={cn("space-y-5", readOnly && "pointer-events-none select-none opacity-60")}>
@@ -4370,7 +4468,6 @@ function ConfigurationTabRuleLevel({ configSection, setConfigSection, typeKey, s
             subtitle="Audience groups and custom conditions"
             icon={MapPin}
           >
-            {readOnly && <PolicyConfigReadOnlyNotice />}
             <div className={cn(readOnly && "pointer-events-none select-none opacity-60")}>
             <ScopeBuilder
               scopeBlocks={scopeBlocks}
@@ -4386,7 +4483,6 @@ function ConfigurationTabRuleLevel({ configSection, setConfigSection, typeKey, s
 
         {configSection === "rules" && (
           <SectionCard title="Rules" subtitle={`Conditions and outcomes per branch · ${typeKey}`} icon={GitBranch}>
-            {readOnly && <PolicyConfigReadOnlyNotice />}
             <div className={cn("space-y-0", readOnly && "pointer-events-none select-none opacity-60")}>
             {branches.map((b, bi) => (
               <div key={b.id}>
