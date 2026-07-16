@@ -61,3 +61,29 @@
     text-rendering: geometricPrecision;
   }
 }
+
+@keyframes ai-notch-glow {
+  0%,
+  78%,
+  100% {
+    opacity: 0;
+    stroke-dashoffset: 220;
+  }
+  6% {
+    opacity: 0.28;
+    stroke-dashoffset: 220;
+  }
+  18% {
+    opacity: 0.35;
+    stroke-dashoffset: 0;
+  }
+  26% {
+    opacity: 0;
+    stroke-dashoffset: 0;
+  }
+}
+
+.ai-notch-glow .ai-notch-glow-stroke {
+  stroke-dasharray: 220;
+  animation: ai-notch-glow 10s ease-in-out infinite;
+}

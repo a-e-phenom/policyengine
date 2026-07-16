@@ -1,13 +1,13 @@
-import { useState, useEffect, useRef, Fragment } from "react";
+import { useState, useEffect, useRef, Fragment, createContext, useContext, useId } from "react";
 import {
-  Shield, GitBranch, Users, RefreshCw, MapPin, Database, FileText, Plus, Trash2,
+  Shield, GitBranch, Users, RefreshCw, MapPin, Database, FileText, Plus, Trash2, Trash,
   ChevronRight, Save, X, Check, ChevronDown,
   Search, ArrowRight, Building2, ChevronLeft, Bell, Link2, Sparkle,
   Upload, Paperclip, Settings, Workflow, ExternalLink, Activity, Zap, Clock, ListChecks,
   CheckCircle, Eye, Octagon, Ban, ArrowUpCircle, Pencil, Flag, RotateCcw,
   SkipForward, ListPlus, Shuffle, Repeat, Pause, XCircle, Inbox, UserPlus, Undo2, Hand,
-  Home, ChartNetwork, Bot, List, Code, PanelLeftClose, PanelRightClose, MessageSquare, UserCheck, Waypoints,
-  ClipboardCheck, TowerControl, SlidersHorizontal, ArrowUp,
+  Home, ChartNetwork, Bot, List, Code, PanelRightClose, MessageSquare, UserCheck, Waypoints,
+  ClipboardCheck, TowerControl, SlidersHorizontal, ArrowUp, Info, Calendar, AlertTriangle,
 } from "lucide-react";
 import {
   cn, Button, Input, Textarea, Label, Card, CardHeader, CardTitle, CardDescription,
@@ -93,6 +93,83 @@ const TAXONOMY_SEED = {
   "Total Rewards": ["Compensation", "Benefits"],
 };
 
+/* ---------------- People Engine ---------------- */
+
+const ENGINES = {
+  hiring: { key: "hiring", label: "Hiring" },
+  people: { key: "people", label: "People" },
+};
+
+const PEOPLE_TAXONOMY_SEED = {
+  "People Operations": ["Leave Management", "Attendance", "Absence Management"],
+  "Compliance": ["Labour Law", "Payroll Compliance"],
+  "Employee Experience (EX)": ["Self-Service", "Employee Portal"],
+};
+
+const PEOPLE_APPROVERS = ["Manager", "HRBP", "HR Director", "Payroll"];
+
+const PEOPLE_PERSONAS = ["Employee", "Manager", "HRBP", "HR Director", "Payroll"];
+
+const PEOPLE_DATA_SOURCES = [
+  "Leave Balance (Annual)", "Leave Balance (Sick)", "Leave Balance (Casual)",
+  "Leave Type", "Leave Duration (Days)", "Employment Type", "Probation Status",
+  "Attendance Check-in Time", "Attendance Check-out Time", "Minutes Late",
+  "Absence Pattern — Weekday", "Absence Count (Rolling 3 months)", "Absence Rate (Rolling 12 months)",
+  "Consecutive Absence Days", "Regularisation Window (Days)", "Payroll Cycle Lock Status",
+  "Medical Certificate Submitted", "Leave Application Submitted", "Country / Region",
+];
+
+const PEOPLE_TRIGGERS = [
+  "On leave application", "On leave approval", "On attendance check-in", "On attendance check-out",
+  "On regularisation request", "On leave year close", "On payroll cycle lock", "Continuous / scheduled",
+];
+
+const PEOPLE_TRIGGER = {
+  LEAVE_APPLY: "On leave application",
+  LEAVE_APPROVAL: "On leave approval",
+  CHECK_IN: "On attendance check-in",
+  CHECK_OUT: "On attendance check-out",
+  REGULARISATION: "On regularisation request",
+  YEAR_CLOSE: "On leave year close",
+  CYCLE_LOCK: "On payroll cycle lock",
+  SCHEDULED: "Continuous / scheduled",
+};
+
+const PEOPLE_CONTROLLED_ACTIONS_BY_FN = {
+  "Leave Management": ["Leave Application", "Leave Approval", "Leave Cancellation", "Leave Balance Adjustment"],
+  "Attendance": ["Attendance Check-in", "Attendance Check-out", "Attendance Regularisation", "Payroll Processing"],
+  "Absence Management": ["Absence Review", "Disciplinary Action", "HR Escalation"],
+  "Self-Service": ["Leave Application", "Attendance Regularisation"],
+  "Employee Portal": ["Leave Application", "Attendance Check-in"],
+  "Labour Law": ["Leave Approval", "Leave Balance Adjustment"],
+  "Payroll Compliance": ["Payroll Processing", "Leave Balance Adjustment"],
+};
+
+const PEOPLE_POLICY_SOURCE = {
+  LEAVE_ATTENDANCE: "Leave_Attendance_Policy.docx.pdf",
+};
+
+const PEOPLE_PARAMETERS_SEED = [
+  { id: "ppe-1", key: "annualLeaveEntitlement", label: "Annual leave entitlement", value: "24", unit: "days/year", scope: "India · All employees", description: "Total annual leave days per leave year.", usedBy: ["Leave Application Gate", "Carry-Forward Cap"] },
+  { id: "ppe-2", key: "monthlyAccrualRate", label: "Monthly accrual rate", value: "2", unit: "days/month", scope: "India · Full-time", description: "Annual leave accrues monthly from date of joining.", usedBy: ["Leave Application Gate"] },
+  { id: "ppe-3", key: "carryForwardCap", label: "Carry-forward cap", value: "5", unit: "days", scope: "India · Annual leave", description: "Maximum unused annual leave carried to next leave year.", usedBy: ["Carry-Forward Cap"] },
+  { id: "ppe-4", key: "encashmentMaxDays", label: "Encashment maximum", value: "10", unit: "days", scope: "India · On separation", description: "Max accrued annual leave encashed upon separation.", usedBy: ["Leave Encashment Gate"] },
+  { id: "ppe-5", key: "gracePeriodMinutes", label: "Late arrival grace period", value: "15", unit: "minutes", scope: "India · All sites", description: "Window after scheduled start time before lateness is penalised.", usedBy: ["Late Arrival Grace"] },
+  { id: "ppe-6", key: "regularisationWindowDays", label: "Regularisation window", value: "3", unit: "working days", scope: "India · All employees", description: "Days after discrepancy within which regularisation is accepted.", usedBy: ["Attendance Regularisation Gate"] },
+  { id: "ppe-7", key: "shortTermAbsenceThreshold", label: "Short-term absence threshold", value: "3", unit: "instances", scope: "India · Rolling 3 months", description: "Repeated short-term absences triggering informal review.", usedBy: ["Absenteeism Pattern Block"] },
+  { id: "ppe-8", key: "rollingAbsenceRatePct", label: "Rolling absence rate threshold", value: "10", unit: "%", scope: "India · Rolling 12 months", description: "Absence rate above which formal HR review is triggered.", usedBy: ["Absenteeism Pattern Block"] },
+  { id: "ppe-9", key: "consecutiveAbsenceThreshold", label: "Consecutive absence threshold", value: "3", unit: "days", scope: "India · Unexplained", description: "Consecutive unexplained absences triggering formal review.", usedBy: ["Consecutive Absence Review"] },
+  { id: "ppe-10", key: "probationLeaveLimit", label: "Probation leave limit", value: "1", unit: "leave/month", scope: "India · Probationary", description: "Max leaves per month during prohibition period.", usedBy: ["Probation Leave Restriction"] },
+  { id: "ppe-11", key: "advanceNoticeDays", label: "Planned leave advance notice", value: "5", unit: "working days", scope: "India · Annual leave", description: "Minimum advance notice for planned leave applications.", usedBy: ["Leave Application Gate"] },
+  { id: "ppe-12", key: "sickLeaveCertDays", label: "Sick leave certificate threshold", value: "2", unit: "consecutive days", scope: "India · Sick leave", description: "Medical certificate required for sick leave exceeding this duration.", usedBy: ["Sick Leave Documentation"] },
+];
+
+const PEOPLE_AUDIENCES_SEED = [
+  { id: "paud-1", name: "India Employees", summary: [{ source: "Country / Region", operator: "EQUALS", value: "India" }], usedBy: ["Leave Application Gate", "Late Arrival Grace", "Absenteeism Pattern Block"] },
+  { id: "paud-2", name: "Probationary Employees", summary: [{ source: "Probation Status", operator: "EQUALS", value: "On Probation" }], usedBy: ["Probation Leave Restriction"] },
+  { id: "paud-3", name: "Part-Time Employees", summary: [{ source: "Employment Type", operator: "EQUALS", value: "Part-time" }], usedBy: ["Leave Application Gate"] },
+];
+
 const PERSONAS = ["Candidate", "Recruiter", "Hiring Manager", "Interviewer", "HRBP", "Compliance Reviewer"];
 
 const DATA_SOURCES = [
@@ -108,6 +185,7 @@ const DATA_SOURCES = [
   "Do Not Rehire Flag", "Pipeline Status", "Legal Confirmation Status",
   "Offer Acceptance Status",
   "Eye Track", "Voice Tone", "Facial Expressions",
+  "Policy Outcome: Identity Fraud", "Policy Outcome: Knowledge Fraud",
 ];
 const OPERATORS = ["IS IN", "IS NOT IN", "EQUALS", "NOT EQUALS", "GREATER THAN", "LESS THAN", "BETWEEN", "MATCHES", "SAME AS", "NOT SAME AS"];
 // Operators that compare one data field against another field, rather than a static value.
@@ -118,36 +196,40 @@ const NOTIFY_TEMPLATES = [
   "Candidate: Application Status Update", "Manager: Approval Required",
   "Legal: No-Poach Confirmation Required", "Recruiter: Do-Not-Hire Match", "Recruiter: UAN / Resume Mismatch",
   "TA Ops: Rehire Cooling-Off Review",
+  "Interviewer: Identity Fraud Soft Stop", "Interviewer: Knowledge Fraud Soft Stop",
+  "Compliance: Interview Fraud Hard Stop",
 ];
 
 // When the policy is evaluated in the candidate/workflow lifecycle.
 const TRIGGERS = [
-  "When application is received", "At screening", "At scheduling", "At offer stage",
-  "On job publish", "On candidate sourced", "On segment consumed", "Continuous / scheduled",
+  "When application is received", "At screening", "At scheduling", "At interview", "At offer stage",
+  "On job publish", "On candidate sourced", "On segment consumed", "On policy outcome", "Continuous / scheduled",
 ];
 
 const POLICY_TRIGGER = {
   APPLY: "When application is received",
   SCHEDULING: "At scheduling",
+  INTERVIEW: "At interview",
   OFFER: "At offer stage",
   SOURCING: "On candidate sourced",
   JOB_PUBLISH: "On job publish",
+  POLICY_OUTCOME: "On policy outcome",
   SCHEDULED: "Continuous / scheduled",
 };
 
 function getPolicyTriggerLabel(policy) {
-  if (policy?.configMode === "v3") {
-    const fromSettings = policy?.branchSettings?.map((b) => b.trigger).filter(Boolean) || [];
-    const unique = [...new Set(fromSettings)];
-    if (unique.length > 1) return unique.join(" · ");
-    if (unique.length === 1) return unique[0];
-  }
+  const fromSettings = policy?.branchSettings?.map((b) => b.trigger).filter(Boolean) || [];
+  const unique = [...new Set(fromSettings)];
+  if (unique.length > 1) return unique.join(" · ");
+  if (unique.length === 1) return unique[0];
   return policy?.trigger || "—";
 }
 
 function defaultTriggerForPolicy(name) {
   const n = normalizeText(name);
   if (n.includes("recording") || n.includes("interview feature")) return POLICY_TRIGGER.SCHEDULING;
+  if (n.includes("identity fraud") || n.includes("knowledge fraud")) return POLICY_TRIGGER.INTERVIEW;
+  if (n.includes("interview fraud escalation") || n.includes("fraud escalation")) return POLICY_TRIGGER.POLICY_OUTCOME;
   if (n.includes("job family suppression")) return POLICY_TRIGGER.JOB_PUBLISH;
   if (n.includes("msa-expiry")) return POLICY_TRIGGER.SCHEDULED;
   if (n.includes("consent") || n.includes("employee exclusion") || n.includes("country sourcing")
@@ -215,7 +297,7 @@ const ENFORCEMENT_STAGES = ["Immediate", "Application", "Screening", "Interview"
 const APPROVERS = ["Hiring Manager", "Legal", "Compliance Reviewer", "HRBP", "Talent Leadership"];
 
 const CONTROLLED_ACTIONS_BY_FN = {
-  "Interview Intelligence": ["Interview Recording", "Interview Scheduling", "Interview Transcription", "AI Interview Analysis"],
+  "Interview Intelligence": ["Interview Recording", "Interview Scheduling", "Interview Transcription", "AI Interview Analysis", "Interview Progression"],
   "Screening": ["Application Submission", "Application Progression", "Background Check Initiation", "Screening Decision"],
   "Sourcing": ["Candidate Sourcing", "Automated Outreach", "Application Progression", "No-Poach Restriction Level", "Job Publish"],
   "Offer Management": ["Offer Release", "Offer Acceptance", "Offer Progression"],
@@ -231,6 +313,7 @@ const CONTROLLED_ACTION_LABELS = {
   "AI Interview Analysis": "AI Insights",
   "Interview Scheduling": "Scheduling",
   "Interview Transcription": "Transcription",
+  "Interview Progression": "Progression",
 };
 
 function controlledActionLabel(action) {
@@ -272,12 +355,6 @@ function defaultControlledAction(existing) {
   return options[0] || "";
 }
 
-const CONFIG_MODES = [
-  { id: "policy", label: "V1" },
-  { id: "rule", label: "V2" },
-  { id: "v3", label: "V3" },
-];
-
 function defaultBranchControlledActions(fn, policyAction, outcome) {
   const options = getControlledActionOptions(fn);
   if (Array.isArray(policyAction) && policyAction.length) return policyAction.filter((a) => options.includes(a));
@@ -286,8 +363,7 @@ function defaultBranchControlledActions(fn, policyAction, outcome) {
   return options[0] ? [options[0]] : [];
 }
 
-function hydrateBranchesForMode(branches, { existing, fn, policyControlledAction, policyTrigger, configMode }) {
-  if (configMode !== "rule" && configMode !== "v3") return branches;
+function hydrateBranches(branches, { existing, fn, policyControlledAction, policyTrigger }) {
   const settings = existing?.branchSettings || [];
   return branches.map((b, i) => {
     const saved = settings.find((s) => s.kind === b.kind && (s.index === undefined || s.index === i))
@@ -298,36 +374,11 @@ function hydrateBranchesForMode(branches, { existing, fn, policyControlledAction
       : savedActions || defaultBranchControlledActions(fn, b.controlledAction || policyControlledAction, b.outcome);
     return {
       ...b,
-      ...(configMode === "v3" ? { trigger: b.trigger || saved?.trigger || policyTrigger || TRIGGERS[0] } : {}),
+      trigger: b.trigger || saved?.trigger || policyTrigger || TRIGGERS[0],
       controlledActions: branchActions,
       controlledAction: branchActions[0] || "",
     };
   });
-}
-
-function ConfiguratorModeSwitcher({ mode, onChange, insetLeft = "1.5rem" }) {
-  return (
-    <div className="fixed bottom-6 z-50" style={{ left: insetLeft }}>
-      <div className="flex items-center gap-1 rounded-xl border bg-white/95 p-1 shadow-lg backdrop-blur-sm">
-        {CONFIG_MODES.map((m) => {
-          const active = mode === m.id;
-          return (
-            <button
-              key={m.id}
-              type="button"
-              onClick={() => onChange(m.id)}
-              className={cn(
-                "rounded-lg px-3 py-2 text-xs font-medium transition-colors",
-                active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground",
-              )}
-            >
-              {m.label}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
 }
 
 function OutcomeWithAction({ outcome, controlledAction, controlledActions }) {
@@ -445,7 +496,7 @@ const PARAMETERS_SEED = [
     unit: null,
     scope: "Interview screening",
     description: "Dynamic boolean — true when all configured fraud signals are flagged.",
-    usedBy: ["Interview Fraud Detection"],
+    usedBy: ["Interview Fraud Escalation", "Identity Fraud", "Knowledge Fraud"],
     compute: {
       orGate: false,
       groups: [{
@@ -582,6 +633,9 @@ const POLICY_SOURCE = {
 const POLICY_DEMO_OUTCOMES = {
   p1: { outcome: "Block", message: "Recording blocked when any geographic dimension is restricted or context is unknown." },
   p22: { outcome: "Soft Stop / Block", message: "Country-specific recording and AI insight rules apply." },
+  p24: { outcome: "Soft Stop", message: "Identity fraud signals flagged — Soft Stop on interview progression." },
+  p25: { outcome: "Soft Stop", message: "Knowledge fraud signals flagged — Soft Stop on interview progression." },
+  p26: { outcome: "Hard Stop", message: "Identity Fraud and Knowledge Fraud both Soft Stop → escalates to Hard Stop." },
   p18: { outcome: "Block", message: "Current employees are excluded from external sourcing." },
   p21: { outcome: "Block", message: "Rehire ineligibility filters applied at sourcing time." },
   p23: { outcome: "Block", message: "Competitor or disqualified company exclusion." },
@@ -680,9 +734,16 @@ function ConflictResolutionSummary({ priority, mandatory, coPolicies }) {
 }
 
 const POLICIES_SEED = [
-  { id: "p22", name: "Interview Feature Restriction", type: "Guardrail", domain: "Hiring Intelligence", fn: "Interview Intelligence", scope: [], status: "Active", personas: ["Candidate", "Interviewer"], trigger: "At scheduling", priority: "Medium", source: POLICY_SOURCE.RECORDING, controlledAction: "Interview Recording", configMode: "v3" },
-  { id: "p1", name: "EU Recording Restriction", type: "Guardrail", domain: "Hiring Intelligence", fn: "Interview Intelligence", scope: ["EMEA GDPR Candidates", "Current Employees"], scopeInline: true, status: "Active", personas: ["Candidate", "Interviewer"], trigger: "At scheduling", priority: "High", applicability: { location: "EU / GDPR Countries" }, source: POLICY_SOURCE.RECORDING, controlledAction: "Interview Recording", configMode: "v3" },
-  { id: "p2", name: "No-Poach Tier 1 Block", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Protected Client No-Poach Tier 1"], status: "Active", personas: ["Recruiter"], trigger: "When application is received", priority: "High", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression", configMode: "v3",
+  { id: "p22", name: "Interview Feature Restriction", type: "Guardrail", domain: "Hiring Intelligence", fn: "Interview Intelligence", scope: [], status: "Active", personas: ["Candidate", "Interviewer"], trigger: "At scheduling", priority: "Medium", source: "-", controlledAction: "Interview Recording" },
+  { id: "p24", name: "Identity Fraud", type: "Guardrail", domain: "Hiring Intelligence", fn: "Interview Intelligence", scope: [], status: "Active", personas: ["Interviewer", "Compliance Reviewer"], trigger: "At interview", priority: "High", source: "-", controlledAction: "Interview Progression" },
+  { id: "p25", name: "Knowledge Fraud", type: "Guardrail", domain: "Hiring Intelligence", fn: "Interview Intelligence", scope: [], status: "Active", personas: ["Interviewer", "Compliance Reviewer"], trigger: "At interview", priority: "High", source: "-", controlledAction: "Interview Progression" },
+  { id: "p26", name: "Interview Fraud Escalation", type: "Guardrail", domain: "Hiring Intelligence", fn: "Interview Intelligence", scope: [], status: "Active", personas: ["Compliance Reviewer", "HRBP"], trigger: "On policy outcome", priority: "High", source: "-", controlledAction: "Interview Progression",
+    branchSettings: [
+      { index: 0, kind: "IF", trigger: POLICY_TRIGGER.POLICY_OUTCOME, controlledActions: ["Interview Progression"] },
+    ],
+  },
+  { id: "p1", name: "EU Recording Restriction", type: "Guardrail", domain: "Hiring Intelligence", fn: "Interview Intelligence", scope: ["EMEA GDPR Candidates", "Current Employees"], scopeInline: true, status: "Active", personas: ["Candidate", "Interviewer"], trigger: "At scheduling", priority: "High", applicability: { location: "EU / GDPR Countries" }, source: POLICY_SOURCE.RECORDING, controlledAction: "Interview Recording" },
+  { id: "p2", name: "No-Poach Tier 1 Block", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Protected Client No-Poach Tier 1"], status: "Active", personas: ["Recruiter"], trigger: "When application is received", priority: "High", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression",
     branchSettings: [
       { index: 0, kind: "IF", trigger: POLICY_TRIGGER.APPLY, controlledActions: ["Application Progression"] },
       { index: 1, kind: "ELSE IF", trigger: POLICY_TRIGGER.OFFER, controlledActions: ["Application Progression"] },
@@ -690,34 +751,87 @@ const POLICIES_SEED = [
   },
 
   // ---- EPFO / India verification policies (spreadsheet) ----
-  { id: "p8", name: "Do-Not-Hire Employer Block", type: "Guardrail", domain: "Talent Acquisition", fn: "Screening", scope: ["India Applicants", "Do-Not-Hire Employers"], status: "Active", personas: ["Recruiter", "Compliance Reviewer"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Submission", configMode: "v3" },
-  { id: "p9", name: "Do-Not-Hire Alias Match", type: "Guardrail", domain: "Talent Acquisition", fn: "Screening", scope: ["India Applicants", "Do-Not-Hire Employers"], status: "Active", personas: ["Recruiter"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Submission", configMode: "v3" },
-  { id: "p10", name: "Resume vs UAN Mismatch", type: "Guardrail", domain: "Talent Acquisition", fn: "Screening", scope: ["India Applicants"], status: "Active", personas: ["Recruiter", "Compliance Reviewer"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Submission", configMode: "v3" },
-  { id: "p11", name: "Rehire Performance Screen", type: "Guardrail", domain: "Talent Acquisition", fn: "Screening", scope: ["India Applicants", "Rehire Candidates"], status: "Active", personas: ["HRBP"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression", configMode: "v3" },
+  { id: "p8", name: "Do-Not-Hire Employer Block", type: "Guardrail", domain: "Talent Acquisition", fn: "Screening", scope: ["India Applicants", "Do-Not-Hire Employers"], status: "Active", personas: ["Recruiter", "Compliance Reviewer"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Submission" },
+  { id: "p9", name: "Do-Not-Hire Alias Match", type: "Guardrail", domain: "Talent Acquisition", fn: "Screening", scope: ["India Applicants", "Do-Not-Hire Employers"], status: "Active", personas: ["Recruiter"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Submission" },
+  { id: "p10", name: "Resume vs UAN Mismatch", type: "Guardrail", domain: "Talent Acquisition", fn: "Screening", scope: ["India Applicants"], status: "Active", personas: ["Recruiter", "Compliance Reviewer"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Submission" },
+  { id: "p11", name: "Rehire Performance Screen", type: "Guardrail", domain: "Talent Acquisition", fn: "Screening", scope: ["India Applicants", "Rehire Candidates"], status: "Active", personas: ["HRBP"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression" },
 
   // ---- No-Poach program (spreadsheet, tiered) ----
-  { id: "p12", name: "No-Poach Tier 2 Cooling-Off", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["No-Poach Tier 2 Protected"], status: "Active", personas: ["Recruiter", "Compliance Reviewer"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression", configMode: "v3",
+  { id: "p12", name: "No-Poach Tier 2 Cooling-Off", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["No-Poach Tier 2 Protected"], status: "Active", personas: ["Recruiter", "Compliance Reviewer"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression",
     branchSettings: [
       { index: 0, kind: "IF", trigger: POLICY_TRIGGER.APPLY, controlledActions: ["Application Progression"] },
       { index: 1, kind: "ELSE IF", trigger: POLICY_TRIGGER.OFFER, controlledActions: ["Application Progression"] },
     ],
   },
-  { id: "p13", name: "No-Poach Concealment Hard Stop", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Protected Client No-Poach Tier 1"], status: "Active", personas: ["Compliance Reviewer"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression", configMode: "v3" },
-  { id: "p14", name: "No-Poach Alias & Subsidiary Match", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Protected Client No-Poach Tier 1"], status: "Active", personas: ["Recruiter"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression", configMode: "v3" },
-  { id: "p15", name: "No-Poach MSA-Expiry Downgrade", type: "State Transition", domain: "Talent Acquisition", fn: "Sourcing", scope: [], status: "Active", personas: ["Compliance Reviewer"], trigger: "Continuous / scheduled", source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "No-Poach Restriction Level", configMode: "v3" },
-  { id: "p16", name: "Rehire Protected-Client Review", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Rehire Candidates"], status: "Active", personas: ["Recruiter"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression", configMode: "v3" },
+  { id: "p13", name: "No-Poach Concealment Hard Stop", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Protected Client No-Poach Tier 1"], status: "Active", personas: ["Compliance Reviewer"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression" },
+  { id: "p14", name: "No-Poach Alias & Subsidiary Match", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Protected Client No-Poach Tier 1"], status: "Active", personas: ["Recruiter"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression" },
+  { id: "p15", name: "No-Poach MSA-Expiry Downgrade", type: "State Transition", domain: "Talent Acquisition", fn: "Sourcing", scope: [], status: "Active", personas: ["Compliance Reviewer"], trigger: "Continuous / scheduled", source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "No-Poach Restriction Level" },
+  { id: "p16", name: "Rehire Protected-Client Review", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Rehire Candidates"], status: "Active", personas: ["Recruiter"], trigger: "When application is received", applicability: { location: "India" }, source: POLICY_SOURCE.INDIA_APPLY, controlledAction: "Application Progression" },
 
   // ---- Sourcing Agent policies (PDF 2) ----
-  { id: "p23", name: "Company Exclusion", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: [], status: "Active", personas: ["Recruiter"], trigger: "On candidate sourced", priority: "High", source: POLICY_SOURCE.SOURCING, controlledAction: "Candidate Sourcing", configMode: "v3" },
-  { id: "p17", name: "Candidate Consent Gate", type: "Guardrail", domain: "Compliance", fn: "Data Privacy", scope: [], status: "Active", personas: ["Candidate"], trigger: "On candidate sourced", source: POLICY_SOURCE.SOURCING, controlledAction: "Candidate Sourcing", configMode: "v3" },
-  { id: "p18", name: "Current Employee Exclusion", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Current Employees"], status: "Active", personas: ["Recruiter"], trigger: "On candidate sourced", mandatory: true, source: POLICY_SOURCE.SOURCING, controlledAction: "Candidate Sourcing", configMode: "v3" },
-  { id: "p19", name: "Country Sourcing Restriction", type: "Guardrail", domain: "Compliance", fn: "Data Privacy", scope: [], status: "Active", personas: ["Recruiter"], trigger: "On candidate sourced", source: POLICY_SOURCE.SOURCING, controlledAction: "Candidate Sourcing", configMode: "v3" },
-  { id: "p20", name: "Job Family Suppression", type: "Routing", domain: "Talent Acquisition", fn: "Sourcing", scope: [], status: "Draft", personas: [], trigger: "On job publish", priority: "Low", source: POLICY_SOURCE.SOURCING, controlledAction: "Automated Sourcing", configMode: "v3" },
-  { id: "p21", name: "Rehire", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: [], status: "Active", personas: ["Recruiter"], trigger: "On candidate sourced", source: POLICY_SOURCE.SOURCING, controlledAction: "Candidate Sourcing", configMode: "v3" },
+  { id: "p23", name: "Company Exclusion", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: [], status: "Active", personas: ["Recruiter"], trigger: "On candidate sourced", priority: "High", source: POLICY_SOURCE.SOURCING, controlledAction: "Candidate Sourcing" },
+  { id: "p17", name: "Candidate Consent Gate", type: "Guardrail", domain: "Compliance", fn: "Data Privacy", scope: [], status: "Active", personas: ["Candidate"], trigger: "On candidate sourced", source: POLICY_SOURCE.SOURCING, controlledAction: "Candidate Sourcing" },
+  { id: "p18", name: "Current Employee Exclusion", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: ["Current Employees"], status: "Active", personas: ["Recruiter"], trigger: "On candidate sourced", mandatory: true, global: true, source: POLICY_SOURCE.SOURCING, controlledAction: "Candidate Sourcing" },
+  { id: "p19", name: "Country Sourcing Restriction", type: "Guardrail", domain: "Compliance", fn: "Data Privacy", scope: [], status: "Active", personas: ["Recruiter"], trigger: "On candidate sourced", source: POLICY_SOURCE.SOURCING, controlledAction: "Candidate Sourcing" },
+  { id: "p20", name: "Job Family Suppression", type: "Routing", domain: "Talent Acquisition", fn: "Sourcing", scope: [], status: "Draft", personas: [], trigger: "On job publish", priority: "Low", source: POLICY_SOURCE.SOURCING, controlledAction: "Automated Sourcing" },
+  { id: "p21", name: "Rehire", type: "Guardrail", domain: "Talent Acquisition", fn: "Sourcing", scope: [], status: "Active", personas: ["Recruiter"], trigger: "On candidate sourced", source: POLICY_SOURCE.SOURCING, controlledAction: "Candidate Sourcing" },
 ];
+
+const PEOPLE_POLICIES_SEED = [
+  { id: "pe1", name: "Leave Application Gate", type: "Guardrail", domain: "People Operations", fn: "Leave Management", category: "leave", scope: ["India Employees"], status: "Active", personas: ["Employee", "Manager"], trigger: PEOPLE_TRIGGER.LEAVE_APPLY, priority: "High", applicability: { location: "India" }, source: PEOPLE_POLICY_SOURCE.LEAVE_ATTENDANCE, controlledAction: "Leave Application" },
+  { id: "pe2", name: "Leave Approval Routing", type: "Routing", domain: "People Operations", fn: "Leave Management", category: "leave", scope: [], status: "Active", personas: ["Manager", "HRBP"], trigger: PEOPLE_TRIGGER.LEAVE_APPLY, priority: "High", source: PEOPLE_POLICY_SOURCE.LEAVE_ATTENDANCE, controlledAction: "Leave Approval" },
+  { id: "pe3", name: "Maternity/Paternity Auto-Approve", type: "State Transition", domain: "People Operations", fn: "Leave Management", category: "leave", scope: [], status: "Active", personas: ["HRBP"], trigger: PEOPLE_TRIGGER.LEAVE_APPLY, priority: "Medium", source: PEOPLE_POLICY_SOURCE.LEAVE_ATTENDANCE, controlledAction: "Leave Approval" },
+  { id: "pe4", name: "Probation Leave Restriction", type: "Guardrail", domain: "People Operations", fn: "Leave Management", category: "leave", scope: ["Probationary Employees"], status: "Active", personas: ["Employee", "Manager"], trigger: PEOPLE_TRIGGER.LEAVE_APPLY, priority: "High", source: PEOPLE_POLICY_SOURCE.LEAVE_ATTENDANCE, controlledAction: "Leave Application" },
+  { id: "pe5", name: "Sick Leave Documentation", type: "Guardrail", domain: "People Operations", fn: "Leave Management", category: "leave", scope: [], status: "Active", personas: ["Employee", "Manager"], trigger: PEOPLE_TRIGGER.LEAVE_APPLY, priority: "Medium", source: PEOPLE_POLICY_SOURCE.LEAVE_ATTENDANCE, controlledAction: "Leave Application" },
+  { id: "pe6", name: "Carry-Forward Cap", type: "Guardrail", domain: "People Operations", fn: "Leave Management", category: "leave", scope: [], status: "Active", personas: ["HRBP", "Payroll"], trigger: PEOPLE_TRIGGER.YEAR_CLOSE, priority: "Medium", source: PEOPLE_POLICY_SOURCE.LEAVE_ATTENDANCE, controlledAction: "Leave Balance Adjustment" },
+  { id: "pe7", name: "Leave Encashment Gate", type: "Guardrail", domain: "People Operations", fn: "Leave Management", category: "leave", scope: [], status: "Active", personas: ["HRBP", "Payroll"], trigger: PEOPLE_TRIGGER.SCHEDULED, priority: "Low", source: PEOPLE_POLICY_SOURCE.LEAVE_ATTENDANCE, controlledAction: "Leave Balance Adjustment" },
+  { id: "pe8", name: "Late Arrival Grace", type: "Guardrail", domain: "People Operations", fn: "Attendance", category: "attendance", scope: ["India Employees"], status: "Active", personas: ["Employee", "Manager"], trigger: PEOPLE_TRIGGER.CHECK_IN, priority: "Medium", source: PEOPLE_POLICY_SOURCE.LEAVE_ATTENDANCE, controlledAction: "Attendance Check-in" },
+  { id: "pe9", name: "Attendance Regularisation Gate", type: "Guardrail", domain: "People Operations", fn: "Attendance", category: "attendance", scope: [], status: "Active", personas: ["Employee", "Manager"], trigger: PEOPLE_TRIGGER.REGULARISATION, priority: "High", source: PEOPLE_POLICY_SOURCE.LEAVE_ATTENDANCE, controlledAction: "Attendance Regularisation" },
+  { id: "pe10", name: "Cycle Lock Enforcement", type: "Guardrail", domain: "People Operations", fn: "Attendance", category: "attendance", scope: [], status: "Active", personas: ["HRBP", "Payroll"], trigger: PEOPLE_TRIGGER.CYCLE_LOCK, priority: "High", source: PEOPLE_POLICY_SOURCE.LEAVE_ATTENDANCE, controlledAction: "Payroll Processing" },
+  { id: "pe11", name: "Incomplete Attendance Record", type: "Guardrail", domain: "People Operations", fn: "Attendance", category: "attendance", scope: [], status: "Active", personas: ["Employee", "Manager"], trigger: PEOPLE_TRIGGER.CHECK_OUT, priority: "Medium", source: PEOPLE_POLICY_SOURCE.LEAVE_ATTENDANCE, controlledAction: "Attendance Check-out" },
+  { id: "pe12", name: "Absenteeism Pattern Block", type: "Guardrail", domain: "People Operations", fn: "Absence Management", category: "absenteeism", scope: ["India Employees"], status: "Active", personas: ["Manager", "HRBP"], trigger: PEOPLE_TRIGGER.SCHEDULED, priority: "High", source: PEOPLE_POLICY_SOURCE.LEAVE_ATTENDANCE, controlledAction: "Absence Review" },
+  { id: "pe13", name: "Consecutive Absence Review", type: "Guardrail", domain: "People Operations", fn: "Absence Management", category: "absenteeism", scope: [], status: "Active", personas: ["Manager", "HRBP"], trigger: PEOPLE_TRIGGER.SCHEDULED, priority: "High", source: PEOPLE_POLICY_SOURCE.LEAVE_ATTENDANCE, controlledAction: "HR Escalation" },
+  { id: "pe14", name: "Leave Without Pay Trigger", type: "Guardrail", domain: "People Operations", fn: "Leave Management", category: "leave", scope: [], status: "Active", personas: ["Employee", "HRBP"], trigger: PEOPLE_TRIGGER.LEAVE_APPLY, priority: "Medium", source: PEOPLE_POLICY_SOURCE.LEAVE_ATTENDANCE, controlledAction: "Leave Application" },
+];
+
+const PEOPLE_WORKFLOWS_SEED = [
+  { id: "pwf-1", name: "Leave Application Flow", type: "Workflow", stage: "Leave", status: "Active", policies: ["pe1", "pe2", "pe3", "pe4", "pe5", "pe14"] },
+  { id: "pwf-2", name: "Attendance Management Flow", type: "Workflow", stage: "Attendance", status: "Active", policies: ["pe8", "pe9", "pe10", "pe11"] },
+  { id: "pwf-3", name: "Absenteeism Review Flow", type: "Workflow", stage: "Absence", status: "Active", policies: ["pe12", "pe13"] },
+  { id: "pwf-4", name: "Leave Year Close", type: "Pipeline", stage: "Year-end", status: "Active", policies: ["pe6", "pe7"] },
+];
+
+function getEngineDataSources(engine) {
+  return engine === "people" ? PEOPLE_DATA_SOURCES : DATA_SOURCES;
+}
+
+function getEngineTriggers(engine) {
+  return engine === "people" ? PEOPLE_TRIGGERS : TRIGGERS;
+}
+
+function getEnginePersonas(engine) {
+  return engine === "people" ? PEOPLE_PERSONAS : PERSONAS;
+}
+
+function getControlledActionOptionsForEngine(fn, engine) {
+  const map = engine === "people" ? PEOPLE_CONTROLLED_ACTIONS_BY_FN : CONTROLLED_ACTIONS_BY_FN;
+  return map[fn] || (engine === "people" ? ["Workflow Step"] : ["Workflow Step"]);
+}
+
+function getWorkflowsForEngine(engine) {
+  return engine === "people" ? PEOPLE_WORKFLOWS_SEED : WORKFLOWS_SEED;
+}
+
+function getCoPoliciesOnWorkflowsForEngine(policyId, policies, engine) {
+  const workflows = getWorkflowsForEngine(engine).filter((w) => w.policies.includes(policyId));
+  const coPolicyIds = new Set();
+  workflows.forEach((w) => w.policies.forEach((id) => { if (id !== policyId) coPolicyIds.add(id); }));
+  return [...coPolicyIds].map((id) => policies.find((p) => p.id === id)).filter(Boolean);
+}
 
 const WORKFLOWS_SEED = [
   { id: "wf-1", name: "Interview Scheduling Flow", type: "Workflow", stage: "Pre-Interview", status: "Active", policies: ["p22", "p1"] },
+  { id: "wf-9", name: "Interview Fraud Detection Flow", type: "Workflow", stage: "Interview", status: "Active", policies: ["p24", "p25", "p26"] },
   { id: "wf-2", name: "Candidate Sourcing Pipeline", type: "Pipeline", stage: "Sourcing", status: "Active", policies: ["p2", "p17", "p18", "p19", "p20", "p21", "p23"] },
   { id: "wf-4", name: "Offer Management Flow", type: "Workflow", stage: "Offer", status: "Active", policies: ["p2", "p12", "p13"] },
   { id: "wf-7", name: "India Application Compliance Screen", type: "Pipeline", stage: "Screening", status: "Active", policies: ["p8", "p9", "p10", "p11", "p16"] },
@@ -777,6 +891,9 @@ function formatActionLabel(action) {
 
 const USAGE_METRICS_SEED = {
   p22: { evaluations30d: 18640, matchRate: "52%", lastTriggered: "45 min ago", outcomeHits: 9693 },
+  p24: { evaluations30d: 4120, matchRate: "6.8%", lastTriggered: "18 min ago", outcomeHits: 280 },
+  p25: { evaluations30d: 4120, matchRate: "4.1%", lastTriggered: "22 min ago", outcomeHits: 169 },
+  p26: { evaluations30d: 4120, matchRate: "1.2%", lastTriggered: "1 hour ago", outcomeHits: 49 },
   p1: { evaluations30d: 12480, matchRate: "68%", lastTriggered: "2 hours ago", outcomeHits: 8486 },
   p2: { evaluations30d: 43120, matchRate: "4.2%", lastTriggered: "12 min ago", outcomeHits: 1811 },
   p8: { evaluations30d: 28400, matchRate: "3.1%", lastTriggered: "6 min ago", outcomeHits: 880 },
@@ -830,21 +947,21 @@ function RuleBranchHeader({ ruleNumber, kind, onRemove }) {
   );
 }
 
-function RuleBranchTriggerField({ trigger, onChange }) {
+function RuleBranchTriggerField({ trigger, onChange, triggers = TRIGGERS }) {
   return (
     <Field label="Trigger" hint="When this rule is evaluated in the workflow">
-      <SimpleSelect whiteBg value={trigger || TRIGGERS[0]} onChange={onChange} options={TRIGGERS} />
+      <SimpleSelect whiteBg value={trigger || triggers[0]} onChange={onChange} options={triggers} />
     </Field>
   );
 }
 
-function seedRuleForPolicy(existing, type, configMode = "policy") {
+function seedRuleForPolicy(existing, type) {
   const defaultTrigger = existing?.trigger || defaultTriggerForPolicy(existing?.name) || TRIGGERS[0];
-  const seed = buildSeedRuleForPolicy(existing, type, configMode);
-  return configMode === "v3" && seed?.branches ? finalizeSeedBranches(seed, defaultTrigger) : seed;
+  const seed = buildSeedRuleForPolicy(existing, type);
+  return seed?.branches ? finalizeSeedBranches(seed, defaultTrigger) : seed;
 }
 
-function buildSeedRuleForPolicy(existing, type, configMode = "policy") {
+function buildSeedRuleForPolicy(existing, type) {
   const name = normalizeText(existing?.name);
   const defaultTrigger = existing?.trigger || defaultTriggerForPolicy(existing?.name) || TRIGGERS[0];
   const outcome = (key, fallbackIndex = 0) => type.outcomes.find((item) => item.key === key)?.key || type.outcomes[fallbackIndex]?.key || type.outcomes[0].key;
@@ -855,29 +972,26 @@ function buildSeedRuleForPolicy(existing, type, configMode = "policy") {
     notify: false,
   };
 
-  /* ---- V3: per-rule triggers + temporal no-poach ---- */
-  if (configMode === "v3") {
-    if (name.includes("alias & subsidiary")) {
-      return finalizeSeedBranches(buildNoPoachTemporalRules(type, {
-        matchRows: [{ source: "Company (via UAN/EPFO)", operator: "IS IN", value: "No-Poach — Tier 1 (aliases + subsidiaries)" }],
-        matchLabel: "alias or subsidiary of a Tier 1 protected client",
-        applyReason: "Alias or subsidiary of a Tier 1 protected client (EPFO UAN verified).",
-      }), defaultTrigger);
-    }
-    if (name.includes("tier 2 cooling-off")) {
-      return finalizeSeedBranches(buildNoPoachTemporalRules(type, {
-        matchRows: TIER2_COOLING_OFF_MATCH_ROWS,
-        matchLabel: "Tier 2 protected client within cooling-off period",
-        applyReason: "Departed a Tier 2 protected client within the applicable cooling-off period.",
-      }), defaultTrigger);
-    }
-    if (name.includes("tier 1 block") || (name.includes("no-poach") && name.includes("tier 1"))) {
-      return finalizeSeedBranches(buildNoPoachTemporalRules(type, {
-        matchRows: [{ source: "Company (via UAN/EPFO)", operator: "IS IN", value: "No-Poach — Tier 1" }],
-        matchLabel: "Tier 1 protected client match",
-        applyReason: "Currently employed by a Tier 1 protected client (EPFO UAN verified).",
-      }), defaultTrigger);
-    }
+  if (name.includes("alias & subsidiary")) {
+    return finalizeSeedBranches(buildNoPoachTemporalRules(type, {
+      matchRows: [{ source: "Company (via UAN/EPFO)", operator: "IS IN", value: "No-Poach — Tier 1 (aliases + subsidiaries)" }],
+      matchLabel: "alias or subsidiary of a Tier 1 protected client",
+      applyReason: "Alias or subsidiary of a Tier 1 protected client (EPFO UAN verified).",
+    }), defaultTrigger);
+  }
+  if (name.includes("tier 2 cooling-off")) {
+    return finalizeSeedBranches(buildNoPoachTemporalRules(type, {
+      matchRows: TIER2_COOLING_OFF_MATCH_ROWS,
+      matchLabel: "Tier 2 protected client within cooling-off period",
+      applyReason: "Departed a Tier 2 protected client within the applicable cooling-off period.",
+    }), defaultTrigger);
+  }
+  if (name.includes("tier 1 block") || (name.includes("no-poach") && name.includes("tier 1"))) {
+    return finalizeSeedBranches(buildNoPoachTemporalRules(type, {
+      matchRows: [{ source: "Company (via UAN/EPFO)", operator: "IS IN", value: "No-Poach — Tier 1" }],
+      matchLabel: "Tier 1 protected client match",
+      applyReason: "Currently employed by a Tier 1 protected client (EPFO UAN verified).",
+    }), defaultTrigger);
   }
 
   /* ---- EPFO / India verification ---- */
@@ -1011,6 +1125,48 @@ function buildSeedRuleForPolicy(existing, type, configMode = "policy") {
     ] };
   }
 
+  /* ---- Interview fraud composition ---- */
+  if (name.includes("identity fraud")) {
+    return { branches: [
+      { kind: "IF",
+        groups: [[
+          { source: "Eye Track", operator: "EQUALS", value: "Flagged" },
+          { source: "Facial Expressions", operator: "EQUALS", value: "Flagged" },
+        ]],
+        outcome: outcome("Soft Stop"),
+        controlledActions: ["Interview Progression"],
+        reason: "Identity fraud signals detected (eye track / facial expressions). Soft Stop — interviewer can override with review.",
+        notifications: [{ persona: "Interviewer", template: "Interviewer: Identity Fraud Soft Stop" }],
+      },
+    ] };
+  }
+  if (name.includes("knowledge fraud")) {
+    return { branches: [
+      { kind: "IF",
+        rows: [{ source: "Voice Tone", operator: "EQUALS", value: "Flagged" }],
+        outcome: outcome("Soft Stop"),
+        controlledActions: ["Interview Progression"],
+        reason: "Knowledge fraud signals detected (voice / response pattern). Soft Stop — interviewer can override with review.",
+        notifications: [{ persona: "Interviewer", template: "Interviewer: Knowledge Fraud Soft Stop" }],
+      },
+    ] };
+  }
+  if (name.includes("interview fraud escalation") || name.includes("fraud escalation")) {
+    return { branches: [
+      { kind: "IF",
+        groups: [[
+          { source: "Policy Outcome: Identity Fraud", operator: "EQUALS", value: "Soft Stop" },
+          { source: "Policy Outcome: Knowledge Fraud", operator: "EQUALS", value: "Soft Stop" },
+        ]],
+        outcome: outcome("Hard Stop"),
+        controlledActions: ["Interview Progression"],
+        reason: "Identity Fraud and Knowledge Fraud both returned Soft Stop — escalate to Hard Stop. Cannot proceed without a policy exception.",
+        actions: ["Create Case"],
+        notifications: [{ persona: "Compliance Reviewer", template: "Compliance: Interview Fraud Hard Stop" }],
+      },
+    ] };
+  }
+
   /* ---- Interview feature restrictions ---- */
   if (name.includes("interview feature restriction")) {
     return { branches: [
@@ -1105,6 +1261,134 @@ function buildSeedRuleForPolicy(existing, type, configMode = "policy") {
     };
   }
 
+  /* ---- People Engine (Leave & Attendance) ---- */
+  if (name.includes("leave application gate")) {
+    return { branches: [
+      { kind: "IF", groups: [[{ source: "Leave Balance (Annual)", operator: "LESS THAN", value: "Leave Duration (Days)" }]],
+        outcome: outcome("Soft Stop"), controlledActions: ["Leave Application"],
+        reason: "Requested leave exceeds available annual leave balance — advance leave requires HR approval." },
+      { kind: "ELSE IF", groups: [[{ source: "Probation Status", operator: "EQUALS", value: "On Probation" }, { source: "Leave Type", operator: "EQUALS", value: "Annual Leave" }]],
+        outcome: outcome("Block"), controlledActions: ["Leave Application"],
+        reason: "Annual leave cannot be taken during probation without HR approval." },
+    ] };
+  }
+  if (name.includes("leave approval routing")) {
+    return { branches: [
+      { kind: "IF", rows: [{ source: "Leave Duration (Days)", operator: "LESS THAN", value: "4" }],
+        outcome: outcome("Advance"), controlledActions: ["Leave Approval"],
+        reason: "1–3 days: route to Direct Manager (24h SLA)." },
+      { kind: "ELSE IF", rows: [{ source: "Leave Duration (Days)", operator: "BETWEEN", value: "4 – 10" }],
+        outcome: outcome("Escalate"), controlledActions: ["Leave Approval"],
+        reason: "4–10 days: Manager approval + HR notified (48h SLA)." },
+      { kind: "ELSE IF", rows: [{ source: "Leave Duration (Days)", operator: "GREATER THAN", value: "10" }],
+        outcome: outcome("Pause"), controlledActions: ["Leave Approval"],
+        reason: ">10 days: requires Direct Manager + HR approval (72h SLA)." },
+      { kind: "ELSE IF", rows: [{ source: "Leave Type", operator: "EQUALS", value: "Leave Without Pay" }],
+        outcome: outcome("Escalate"), controlledActions: ["Leave Approval"],
+        reason: "LWP requires HR approval.", requiresApproval: true, approver: "HRBP" },
+    ] };
+  }
+  if (name.includes("maternity") || name.includes("paternity")) {
+    return { branches: [
+      { kind: "IF", rows: [{ source: "Medical Certificate Submitted", operator: "EQUALS", value: "Yes" }],
+        outcome: outcome("Transition"), controlledActions: ["Leave Approval"],
+        reason: "Documentation submitted — auto-approve maternity/paternity leave (same-day SLA)." },
+      { kind: "ELSE", outcome: outcome("Hold"), controlledActions: ["Leave Approval"],
+        reason: "Awaiting required documentation before approval." },
+    ] };
+  }
+  if (name.includes("probation leave")) {
+    return { branches: [
+      { kind: "IF", groups: [[{ source: "Probation Status", operator: "EQUALS", value: "On Probation" }]],
+        outcome: outcome("Soft Stop"), controlledActions: ["Leave Application"],
+        reason: "Probationary employees limited to @probationLeaveLimit leave per month during prohibition period." },
+    ] };
+  }
+  if (name.includes("sick leave documentation")) {
+    return { branches: [
+      { kind: "IF", groups: [[{ source: "Leave Type", operator: "EQUALS", value: "Sick Leave" }, { source: "Leave Duration (Days)", operator: "GREATER THAN", value: "@sickLeaveCertDays" }, { source: "Medical Certificate Submitted", operator: "NOT EQUALS", value: "Yes" }]],
+        outcome: outcome("Soft Stop"), controlledActions: ["Leave Application"],
+        reason: "Medical certificate required for sick leave exceeding @sickLeaveCertDays consecutive days." },
+    ] };
+  }
+  if (name.includes("carry-forward")) {
+    return { branches: [
+      { kind: "IF", rows: [{ source: "Leave Balance (Annual)", operator: "GREATER THAN", value: "@carryForwardCap" }],
+        outcome: outcome("Modify"), controlledActions: ["Leave Balance Adjustment"],
+        reason: "Excess annual leave above @carryForwardCap days lapses at year-end; up to cap is carried forward." },
+    ] };
+  }
+  if (name.includes("encashment")) {
+    return { branches: [
+      { kind: "IF", rows: [{ source: "Leave Balance (Annual)", operator: "GREATER THAN", value: "@encashmentMaxDays" }],
+        outcome: outcome("Modify"), controlledActions: ["Leave Balance Adjustment"],
+        reason: "Encashment capped at @encashmentMaxDays days of accrued annual leave on separation." },
+    ] };
+  }
+  if (name.includes("late arrival")) {
+    return { branches: [
+      { kind: "IF", rows: [{ source: "Minutes Late", operator: "LESS THAN", value: "@gracePeriodMinutes" }],
+        outcome: outcome("Allow"), controlledActions: ["Attendance Check-in"],
+        reason: "Within @gracePeriodMinutes-minute grace period — no penalty." },
+      { kind: "ELSE IF", rows: [{ source: "Minutes Late", operator: "GREATER THAN", value: "@gracePeriodMinutes" }],
+        outcome: outcome("Monitor"), controlledActions: ["Attendance Check-in"],
+        reason: "Late arrival beyond grace period — flagged for review; habitual lateness escalates." },
+    ] };
+  }
+  if (name.includes("regularisation")) {
+    return { branches: [
+      { kind: "IF", rows: [{ source: "Regularisation Window (Days)", operator: "LESS THAN", value: "@regularisationWindowDays" }],
+        outcome: outcome("Allow"), controlledActions: ["Attendance Regularisation"],
+        reason: "Within @regularisationWindowDays working-day window — manager approval required (24h SLA)." },
+      { kind: "ELSE", outcome: outcome("Block"), controlledActions: ["Attendance Regularisation"],
+        reason: "Regularisation window expired — requires HR exception approval." },
+    ] };
+  }
+  if (name.includes("cycle lock")) {
+    return { branches: [
+      { kind: "IF", rows: [{ source: "Payroll Cycle Lock Status", operator: "EQUALS", value: "Locked" }],
+        outcome: outcome("Block"), controlledActions: ["Payroll Processing"],
+        reason: "Attendance cycle locked — no further changes accepted for this payroll cycle." },
+    ] };
+  }
+  if (name.includes("incomplete attendance")) {
+    return { branches: [
+      { kind: "IF", groups: [[{ source: "Attendance Check-in Time", operator: "EQUALS", value: "" }, { source: "Attendance Check-out Time", operator: "EQUALS", value: "" }]],
+        outcome: outcome("Soft Stop"), controlledActions: ["Attendance Check-out"],
+        reason: "Missing check-in or check-out — may result in payroll deduction unless regularised." },
+    ] };
+  }
+  if (name.includes("absenteeism pattern")) {
+    return { branches: [
+      { kind: "IF", groups: [[{ source: "Absence Pattern — Weekday", operator: "IS IN", value: "Monday, Friday" }, { source: "Absence Count (Rolling 3 months)", operator: "GREATER THAN", value: "2" }]],
+        outcome: outcome("Soft Stop"), controlledActions: ["Absence Review"],
+        reason: "Repeated Monday/Friday absence pattern (3+ times) — manager discussion + HR flag." },
+      { kind: "ELSE IF", rows: [{ source: "Absence Count (Rolling 3 months)", operator: "GREATER THAN", value: "@shortTermAbsenceThreshold" }],
+        outcome: outcome("Escalate"), controlledActions: ["Absence Review"],
+        reason: "@shortTermAbsenceThreshold instances in 3 months — informal discussion with manager." },
+      { kind: "ELSE IF", rows: [{ source: "Absence Rate (Rolling 12 months)", operator: "GREATER THAN", value: "@rollingAbsenceRatePct" }],
+        outcome: outcome("Hard Stop"), controlledActions: ["HR Escalation"],
+        reason: "Absence rate exceeds @rollingAbsenceRatePct% — formal HR review and support plan." },
+    ] };
+  }
+  if (name.includes("consecutive absence")) {
+    return { branches: [
+      { kind: "IF", rows: [{ source: "Consecutive Absence Days", operator: "GREATER THAN", value: "@consecutiveAbsenceThreshold" }],
+        outcome: outcome("Escalate"), controlledActions: ["HR Escalation"],
+        reason: "@consecutiveAbsenceThreshold+ consecutive unexplained absences — Manager + HR formal review." },
+    ] };
+  }
+  if (name.includes("leave without pay") || name.includes("lwp")) {
+    return { branches: [
+      { kind: "IF", groups: [[{ source: "Leave Balance (Annual)", operator: "EQUALS", value: "0" }, { source: "Leave Balance (Sick)", operator: "EQUALS", value: "0" }, { source: "Leave Balance (Casual)", operator: "EQUALS", value: "0" }]],
+        outcome: outcome("Escalate"), controlledActions: ["Leave Application"],
+        reason: "No paid leave balance — LWP requires HR approval; payroll deduction applied.", requiresApproval: true, approver: "HRBP" },
+      { kind: "ELSE IF", rows: [{ source: "Leave Application Submitted", operator: "NOT EQUALS", value: "Yes" }],
+        outcome: outcome("Block"), controlledActions: ["Leave Application"],
+        reason: "Absence without leave application — marked as unauthorised absence / LWP." },
+    ] };
+  }
+
   return base;
 }
 
@@ -1125,7 +1409,7 @@ function buildScopeLabel(applicability, scopeBlocks) {
   const appParts = activeApplicability(applicability).map((a) => a.value);
   const blockParts = (scopeBlocks || []).map((block) => {
     if (block.type === "audience") return block.audienceName;
-    const rows = block.rows.filter((r) => r.value);
+    const rows = (block.rows || []).filter((r) => r.value);
     return rows.length
       ? rows.map((r) => `${r.source} ${r.operator} "${r.value}"`).join(", ")
       : "Custom conditions";
@@ -1138,9 +1422,10 @@ function normalizeText(value) {
   return String(value || "").trim().toLowerCase();
 }
 
-function ScopeSummary({ scopeBlocks, applicability, groupsOnly = false }) {
+function ScopeSummary({ scopeBlocks, applicability, groupsOnly = false, groupOrGate = false }) {
   const appChips = groupsOnly ? [] : activeApplicability(applicability);
   if (!appChips.length && !scopeBlocks.length) return <Badge variant="secondary">Global</Badge>;
+  const gateLabel = groupOrGate ? "OR" : "AND";
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {appChips.map((a) => (
@@ -1148,13 +1433,13 @@ function ScopeSummary({ scopeBlocks, applicability, groupsOnly = false }) {
       ))}
       {scopeBlocks.map((block, i) => (
         <span key={block.id} className="inline-flex items-center gap-1.5">
-          {(i > 0 || appChips.length > 0) && <span className="text-[10px] font-medium text-muted-foreground">AND</span>}
+          {(i > 0 || appChips.length > 0) && <span className="text-[10px] font-medium text-muted-foreground">{gateLabel}</span>}
           {block.type === "audience" ? (
             <Badge variant="outline">{block.audienceName}</Badge>
           ) : (
             <Badge variant="secondary">
-              {block.rows.filter((r) => r.value).length
-                ? block.rows.filter((r) => r.value).map((r) => `${r.source} ${r.operator} "${r.value}"`).join(", ")
+              {(block.rows || []).filter((r) => r.value).length
+                ? (block.rows || []).filter((r) => r.value).map((r) => `${r.source} ${r.operator} "${r.value}"`).join(", ")
                 : "Custom conditions"}
             </Badge>
           )}
@@ -1164,47 +1449,61 @@ function ScopeSummary({ scopeBlocks, applicability, groupsOnly = false }) {
   );
 }
 
-function ScopeBuilder({ scopeBlocks, setScopeBlocks, audiences }) {
+function ScopeBuilder({ scopeBlocks, setScopeBlocks, audiences, groupOrGate = false, setGroupOrGate, allowGroupOrGate = false }) {
   const usedAudiences = new Set(scopeBlocks.filter((b) => b.type === "audience").map((b) => b.audienceName));
   const availableAudiences = audiences.filter((a) => !usedAudiences.has(a.name));
 
-  function updateBlock(id, patch) {
-    setScopeBlocks(scopeBlocks.map((b) => b.id === id ? { ...b, ...patch } : b));
-  }
   function removeBlock(id) {
-    setScopeBlocks(scopeBlocks.filter((b) => b.id !== id));
+    setScopeBlocks((prev) => prev.filter((b) => b.id !== id));
   }
   function addAudienceBlock(audienceName) {
-    setScopeBlocks([...scopeBlocks, { id: uid++, type: "audience", audienceName }]);
+    setScopeBlocks((prev) => [...prev, { id: uid++, type: "audience", audienceName }]);
   }
   function addCustomBlock() {
-    setScopeBlocks([...scopeBlocks, {
+    setScopeBlocks((prev) => [...prev, {
       id: uid++, type: "custom", orGate: false,
       rows: [{ id: uid++, source: DATA_SOURCES[0], operator: "IS IN", value: "" }],
     }]);
   }
   function addRow(blockId) {
-    const block = scopeBlocks.find((b) => b.id === blockId);
-    const operator = block.rows[0]?.operator || "IS IN";
-    updateBlock(blockId, {
-      rows: [...block.rows, { id: uid++, source: DATA_SOURCES[0], operator, value: "" }],
-    });
+    setScopeBlocks((prev) => prev.map((b) => {
+      if (b.id !== blockId) return b;
+      const rows = b.rows || [];
+      const operator = rows[0]?.operator || "IS IN";
+      return {
+        ...b,
+        rows: [...rows, { id: uid++, source: DATA_SOURCES[0], operator, value: "" }],
+      };
+    }));
   }
   function removeRow(blockId, rowId) {
-    const block = scopeBlocks.find((b) => b.id === blockId);
-    updateBlock(blockId, { rows: block.rows.filter((r) => r.id !== rowId) });
+    setScopeBlocks((prev) => prev.map((b) => {
+      if (b.id !== blockId) return b;
+      return { ...b, rows: (b.rows || []).filter((r) => r.id !== rowId) };
+    }));
   }
   function updateRow(blockId, rowId, patch) {
-    const block = scopeBlocks.find((b) => b.id === blockId);
-    updateBlock(blockId, { rows: block.rows.map((r) => r.id === rowId ? { ...r, ...patch } : r) });
+    setScopeBlocks((prev) => prev.map((b) => {
+      if (b.id !== blockId) return b;
+      return { ...b, rows: (b.rows || []).map((r) => (r.id === rowId ? { ...r, ...patch } : r)) };
+    }));
   }
   function setBlockOperator(blockId, operator) {
-    const block = scopeBlocks.find((b) => b.id === blockId);
-    updateBlock(blockId, { rows: block.rows.map((r) => ({ ...r, operator })) });
+    setScopeBlocks((prev) => prev.map((b) => {
+      if (b.id !== blockId) return b;
+      return { ...b, rows: (b.rows || []).map((r) => ({ ...r, operator })) };
+    }));
+  }
+  function setBlockOrGate(blockId, nextOrGate) {
+    setScopeBlocks((prev) => prev.map((b) => {
+      if (b.id !== blockId) return b;
+      const orGate = typeof nextOrGate === "boolean" ? nextOrGate : !b.orGate;
+      return { ...b, orGate };
+    }));
   }
 
   return (
-    <div className="space-y-3">
+    <div>
       {scopeBlocks.length === 0 ? (
         <div className="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
           No scope groups yet. This policy will evaluate globally.
@@ -1213,17 +1512,28 @@ function ScopeBuilder({ scopeBlocks, setScopeBlocks, audiences }) {
         scopeBlocks.map((block, bi) => {
           const audience = block.type === "audience" ? audiences.find((a) => a.name === block.audienceName) : null;
           return (
-            <div key={block.id}>
-              <div className="overflow-hidden rounded-lg border">
-                <div className="flex items-center justify-between border-b bg-muted/40 px-3.5 py-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Group {bi + 1}</span>
-                    <Badge variant={block.type === "audience" ? "outline" : "secondary"}>
-                      {block.type === "audience" ? "Audience" : "Custom"}
-                    </Badge>
-                  </div>
-                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => removeBlock(block.id)}>
-                    <Trash2 className="h-3.5 w-3.5" />
+            <Fragment key={block.id}>
+              {bi > 0 && (
+                <div className="flex py-2">
+                  <ConditionGateLabel
+                    orGate={groupOrGate}
+                    onToggle={() => setGroupOrGate?.(!groupOrGate)}
+                    showToggle={allowGroupOrGate}
+                    staticLabel={!allowGroupOrGate}
+                  />
+                </div>
+              )}
+              <div className="group/block overflow-hidden rounded-lg border">
+                <div className="flex items-center justify-between border-b bg-muted/40 px-3.5 py-1.5">
+                  <span className="text-xs text-muted-foreground">Group {bi + 1}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover/block:opacity-100 focus-visible:opacity-100"
+                    onClick={() => removeBlock(block.id)}
+                  >
+                    <Trash className="h-3.5 w-3.5" />
                   </Button>
                 </div>
 
@@ -1239,33 +1549,31 @@ function ScopeBuilder({ scopeBlocks, setScopeBlocks, audiences }) {
                 ) : (
                   <div className="space-y-3 p-3.5">
                     <ConditionRows
-                      rows={block.rows}
-                      orGate={block.orGate}
-                      setOrGate={(value) => updateBlock(block.id, { orGate: value })}
+                      rows={block.rows || []}
+                      orGate={!!block.orGate}
+                      setOrGate={(nextOrGate) => setBlockOrGate(block.id, nextOrGate)}
                       onUpdateRow={(rid, patch) => updateRow(block.id, rid, patch)}
                       onRemoveRow={(rid) => removeRow(block.id, rid)}
                       onAddRow={() => addRow(block.id)}
                       onSetGroupOperator={(operator) => setBlockOperator(block.id, operator)}
+                      toggleAllGates
+                      addButtonClassName="mt-5"
                     />
                   </div>
                 )}
               </div>
-              {bi < scopeBlocks.length - 1 && (
-                <div className="flex py-2">
-                  <ConditionGateLabel staticLabel showToggle={false} />
-                </div>
-              )}
-            </div>
+            </Fragment>
           );
         })
       )}
 
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="outline" className="w-full border-dashed">
-            <Plus className="h-3.5 w-3.5" /> Add group
-          </Button>
-        </DropdownMenuTrigger>
+      <div className="mt-5">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" className="w-full border-dashed">
+              <Plus className="h-3.5 w-3.5" /> Add group
+            </Button>
+          </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-72">
           <DropdownMenuItem onClick={addCustomBlock}>
             <Plus className="h-3.5 w-3.5" /> New condition group
@@ -1280,17 +1588,61 @@ function ScopeBuilder({ scopeBlocks, setScopeBlocks, audiences }) {
             <div className="px-2 py-1.5 text-xs text-muted-foreground">All audiences already added</div>
           )}
         </DropdownMenuContent>
-      </DropdownMenu>
+        </DropdownMenu>
+      </div>
+    </div>
+  );
+}
+
+const FieldHintContext = createContext({ hintAsTooltip: false });
+
+function FieldHintProvider({ hintAsTooltip, children }) {
+  return (
+    <FieldHintContext.Provider value={{ hintAsTooltip: !!hintAsTooltip }}>
+      {children}
+    </FieldHintContext.Provider>
+  );
+}
+
+function HintIcon({ text }) {
+  return (
+    <span className="group/hint relative inline-flex shrink-0">
+      <Info className="h-3.5 w-3.5 text-muted-foreground/70 transition-colors group-hover/hint:text-muted-foreground" aria-hidden />
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute bottom-[calc(100%+6px)] left-1/2 z-50 hidden w-56 -translate-x-1/2 rounded-md border bg-popover px-2.5 py-2 text-xs leading-relaxed font-normal text-popover-foreground shadow-md group-hover/hint:block"
+      >
+        {text}
+      </span>
+    </span>
+  );
+}
+
+function FieldHintLabel({ label, hint, className }) {
+  const { hintAsTooltip } = useContext(FieldHintContext);
+  return (
+    <div className={cn("min-w-0", hintAsTooltip ? "flex items-center gap-1.5" : "", className)}>
+      <p className="text-sm font-medium">{label}</p>
+      {hint && hintAsTooltip && <HintIcon text={hint} />}
+      {hint && !hintAsTooltip && (
+        <p className="text-xs text-muted-foreground">{hint}</p>
+      )}
     </div>
   );
 }
 
 function Field({ label, hint, children }) {
+  const { hintAsTooltip } = useContext(FieldHintContext);
   return (
     <div className="space-y-1.5">
-      <div className="flex items-baseline justify-between">
-        <Label>{label}</Label>
-        {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
+      <div className={cn("flex items-center gap-1.5", hint && !hintAsTooltip && "justify-between")}>
+        <div className="flex items-center gap-1.5">
+          <Label>{label}</Label>
+          {hint && hintAsTooltip && <HintIcon text={hint} />}
+        </div>
+        {hint && !hintAsTooltip && (
+          <span className="text-xs text-muted-foreground">{hint}</span>
+        )}
       </div>
       {children}
     </div>
@@ -1683,7 +2035,7 @@ function ConditionValueField({ value, onChange, parameters = [], allowParameters
   );
 }
 
-function ConditionRows({ rows, orGate, setOrGate, onUpdateRow, onRemoveRow, onAddRow, onSetGroupOperator, parameters = [], allowParameters = false }) {
+function ConditionRows({ rows, orGate, setOrGate, onUpdateRow, onRemoveRow, onAddRow, onSetGroupOperator, parameters = [], allowParameters = false, toggleAllGates = false, addButtonClassName = "mt-3", dataSources = DATA_SOURCES }) {
   const groupOperator = rows[0]?.operator || OPERATORS[0];
   const isFieldComparison = FIELD_COMPARISON_OPERATORS.has(groupOperator);
 
@@ -1696,20 +2048,20 @@ function ConditionRows({ rows, orGate, setOrGate, onUpdateRow, onRemoveRow, onAd
               <ConditionGateLabel
                 orGate={orGate}
                 onToggle={() => setOrGate(!orGate)}
-                showToggle={index === 1}
+                showToggle={toggleAllGates || index === 1}
               />
             </div>
           )}
           <div className="flex items-center gap-2">
             <div className="grid flex-1 grid-cols-[1.4fr_1fr_1fr] gap-2">
-              <SimpleSelect whiteBg value={row.source} onChange={(v) => onUpdateRow(row.id, { source: v })} options={DATA_SOURCES} />
+              <SimpleSelect whiteBg value={row.source} onChange={(v) => onUpdateRow(row.id, { source: v })} options={dataSources} />
               <SimpleSelect whiteBg value={groupOperator} onChange={onSetGroupOperator} options={OPERATORS} />
               {isFieldComparison ? (
                 <SimpleSelect
                   whiteBg
                   value={row.value}
                   onChange={(v) => onUpdateRow(row.id, { value: v })}
-                  options={DATA_SOURCES.filter((d) => d !== row.source)}
+                  options={dataSources.filter((d) => d !== row.source)}
                   placeholder="compare to field…"
                 />
               ) : (
@@ -1727,8 +2079,8 @@ function ConditionRows({ rows, orGate, setOrGate, onUpdateRow, onRemoveRow, onAd
           </div>
         </div>
       ))}
-      <div className="mt-3">
-        <Button type="button" variant="link" size="sm" className="h-auto px-0 py-1 text-xs" onClick={onAddRow}>
+      <div className={addButtonClassName}>
+        <Button type="button" variant="link" size="sm" className="mt-2 h-auto px-0 py-1 text-xs" onClick={onAddRow}>
           <Plus className="h-3.5 w-3.5" /> Add condition
         </Button>
       </div>
@@ -1944,10 +2296,10 @@ function BranchEnforcementEditor({ branch, onChange }) {
     <div className="space-y-3">
       <div className="rounded-lg border bg-muted/20 p-3">
         <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-sm font-medium">Outcome reason</p>
-            <p className="text-xs text-muted-foreground">Optional note for reviewers and audit logs.</p>
-          </div>
+          <FieldHintLabel
+            label="Outcome reason"
+            hint="Optional note for reviewers and audit logs."
+          />
           <Switch checked={reasonOpen} onCheckedChange={toggleReason} />
         </div>
         {reasonOpen && (
@@ -1963,10 +2315,10 @@ function BranchEnforcementEditor({ branch, onChange }) {
 
       <div className="rounded-lg border bg-muted/20 p-3">
         <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-sm font-medium">Require approval before enforcing</p>
-            <p className="text-xs text-muted-foreground">Hold the outcome until a human confirms (e.g. legal sign-off).</p>
-          </div>
+          <FieldHintLabel
+            label="Require approval before enforcing"
+            hint="Hold the outcome until a human confirms (e.g. legal sign-off)."
+          />
           <Switch
             checked={!!branch.requiresApproval}
             onCheckedChange={(checked) => onChange({ requiresApproval: checked })}
@@ -1994,12 +2346,12 @@ function BranchEnforcementEditor({ branch, onChange }) {
   );
 }
 
-function ConditionGroupBuilder({ groups, setGroups, orGate, setOrGate, singleGroup = false, parameters = [], allowParameters = false }) {
+function ConditionGroupBuilder({ groups, setGroups, orGate, setOrGate, singleGroup = false, parameters = [], allowParameters = false, dataSources = DATA_SOURCES }) {
   function addRow(gid) {
     setGroups(groups.map((g) => {
       if (g.id !== gid) return g;
       const operator = g.rows[0]?.operator || "IS IN";
-      return { ...g, rows: [...g.rows, { id: uid++, source: DATA_SOURCES[0], operator, value: "" }] };
+      return { ...g, rows: [...g.rows, { id: uid++, source: dataSources[0], operator, value: "" }] };
     }));
   }
   function removeRow(gid, rid) {
@@ -2013,7 +2365,7 @@ function ConditionGroupBuilder({ groups, setGroups, orGate, setOrGate, singleGro
   }
   function addGroup() {
     const operator = groups[groups.length - 1]?.rows[0]?.operator || "IS IN";
-    setGroups([...groups, { id: uid++, rows: [{ id: uid++, source: DATA_SOURCES[0], operator, value: "" }] }]);
+    setGroups([...groups, { id: uid++, rows: [{ id: uid++, source: dataSources[0], operator, value: "" }] }]);
   }
   function removeGroup(gid) { if (groups.length > 1) setGroups(groups.filter((g) => g.id !== gid)); }
 
@@ -2045,6 +2397,7 @@ function ConditionGroupBuilder({ groups, setGroups, orGate, setOrGate, singleGro
                 onSetGroupOperator={(operator) => setGroupOperator(g.id, operator)}
                 parameters={parameters}
                 allowParameters={allowParameters}
+                dataSources={dataSources}
               />
             </div>
           </div>
@@ -2061,7 +2414,7 @@ function ConditionGroupBuilder({ groups, setGroups, orGate, setOrGate, singleGro
 
 /* ---------------- Sidebar shell ---------------- */
 
-const NAV_PRIMARY = [
+const HIRING_NAV_PRIMARY = [
   { id: "library", label: "Policies", icon: Shield },
   { id: "audiences", label: "Audiences", icon: Users },
   { id: "messages", label: "Message Library", icon: MessageSquare },
@@ -2069,12 +2422,34 @@ const NAV_PRIMARY = [
   { id: "testlab", label: "Test Lab", icon: Waypoints },
 ];
 
-const NAV_SECONDARY = [
+const HIRING_NAV_SECONDARY = [
   { id: "lists", label: "Managed Lists", icon: ListChecks },
   { id: "parameters", label: "Parameters", icon: SlidersHorizontal },
   { id: "types", label: "Policy Types", icon: Database },
   { id: "functions", label: "Business Functions", icon: Building2 },
 ];
+
+const PEOPLE_NAV_PRIMARY = [
+  { id: "library", label: "Policies", icon: Shield },
+  { id: "leave_rules", label: "Leave Management", icon: Calendar },
+  { id: "attendance_rules", label: "Attendance", icon: Clock },
+  { id: "absenteeism", label: "Absenteeism", icon: AlertTriangle },
+  { id: "audiences", label: "Audiences", icon: Users },
+];
+
+const PEOPLE_NAV_SECONDARY = [
+  { id: "parameters", label: "Parameters", icon: SlidersHorizontal },
+  { id: "types", label: "Policy Types", icon: Database },
+  { id: "functions", label: "Business Functions", icon: Building2 },
+];
+
+function getNavForEngine(engine) {
+  return engine === "people"
+    ? { primary: PEOPLE_NAV_PRIMARY, secondary: PEOPLE_NAV_SECONDARY, centerLabel: "People Policy Center" }
+    : { primary: HIRING_NAV_PRIMARY, secondary: HIRING_NAV_SECONDARY, centerLabel: "Policy Center" };
+}
+
+const DEFAULT_VIEW_BY_ENGINE = { hiring: "library", people: "library" };
 
 // Decorative icon rail — not interactive; shows which product area is active.
 const ICON_RAIL_TOP = [
@@ -2126,13 +2501,40 @@ function NavItem({ item, view, setView, setEditingId, navIconClass }) {
   );
 }
 
-function AppSidebar({ view, setView, setEditingId, collapsed, setCollapsed }) {
+function EngineSwitcher({ engine, setEngine, setView, setEditingId }) {
+  return (
+    <div className="flex rounded-lg border bg-muted/30 p-0.5">
+      {Object.values(ENGINES).map((e) => (
+        <button
+          key={e.key}
+          type="button"
+          onClick={() => {
+            setEngine(e.key);
+            setView(DEFAULT_VIEW_BY_ENGINE[e.key]);
+            setEditingId(null);
+          }}
+          className={cn(
+            "flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors",
+            engine === e.key
+              ? "bg-white text-primary shadow-sm"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {e.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function AppSidebar({ view, setView, setEditingId, engine, setEngine }) {
   const navIconClass = "text-[#464F5E]";
+  const { primary, secondary, centerLabel } = getNavForEngine(engine);
 
   return (
-    <aside className="flex shrink-0">
+    <aside className="sticky top-0 flex h-screen shrink-0 self-start">
       {/* Icon rail — decorative only */}
-      <div className="flex w-[52px] shrink-0 flex-col items-center border-r bg-[#f3f3f6] py-3">
+      <div className="flex h-full w-[52px] shrink-0 flex-col items-center border-r bg-[#f3f3f6] py-3">
         <div className="flex flex-col items-center gap-3">
           {ICON_RAIL_TOP.map((item, i) => (
             <IconRailTile key={i} item={item} navIconClass={navIconClass} />
@@ -2146,137 +2548,145 @@ function AppSidebar({ view, setView, setEditingId, collapsed, setCollapsed }) {
       </div>
 
       {/* Policy Center panel */}
-      {!collapsed && (
-        <div className="flex w-[200px] shrink-0 flex-col border-r bg-white">
-          <div className="px-4 pb-2 pt-5">
-            <p className="text-sm text-muted-foreground">Policy Center</p>
-          </div>
-          <nav className="flex-1 space-y-0.5 px-2">
-            {NAV_PRIMARY.map((n) => (
-              <NavItem key={n.id} item={n} view={view} setView={setView} setEditingId={setEditingId} navIconClass={navIconClass} />
-            ))}
-            <Separator className="my-2" />
-            {NAV_SECONDARY.map((n) => (
-              <NavItem key={n.id} item={n} view={view} setView={setView} setEditingId={setEditingId} navIconClass={navIconClass} />
-            ))}
-          </nav>
-          <div className="flex justify-end p-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn("h-8 w-8", navIconClass)}
-              onClick={() => setCollapsed(true)}
-              title="Collapse sidebar"
-            >
-              <PanelLeftClose className="h-4 w-4" />
-            </Button>
-          </div>
+      <div className="flex h-full w-[200px] shrink-0 flex-col border-r bg-white">
+        <div className="px-4 pb-2 pt-5">
+          <p className="text-sm text-muted-foreground">{centerLabel}</p>
         </div>
-      )}
-
-      {collapsed && (
-        <div className="flex w-10 shrink-0 flex-col border-r bg-white">
-          <div className="flex justify-center p-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn("h-8 w-8", navIconClass)}
-              onClick={() => setCollapsed(false)}
-              title="Expand sidebar"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
+        <nav className="flex-1 space-y-0.5 px-2">
+          {primary.map((n) => (
+            <NavItem key={n.id} item={n} view={view} setView={setView} setEditingId={setEditingId} navIconClass={navIconClass} />
+          ))}
+          <Separator className="my-2" />
+          {secondary.map((n) => (
+            <NavItem key={n.id} item={n} view={view} setView={setView} setEditingId={setEditingId} navIconClass={navIconClass} />
+          ))}
+        </nav>
+        <div className="border-t px-3 py-3">
+          <EngineSwitcher engine={engine} setEngine={setEngine} setView={setView} setEditingId={setEditingId} />
         </div>
-      )}
+      </div>
     </aside>
   );
 }
 
 export default function PolicyLibraryApp() {
+  const [engine, setEngine] = useState("hiring");
   const [view, setView] = useState("library");
-  const [configMode, setConfigMode] = useState("v3");
   const [parameters, setParameters] = useState(PARAMETERS_SEED);
   const [policies, setPolicies] = useState(POLICIES_SEED);
   const [audiences, setAudiences] = useState(AUDIENCES_SEED);
   const [taxonomy, setTaxonomy] = useState(TAXONOMY_SEED);
+  const [peopleParameters, setPeopleParameters] = useState(PEOPLE_PARAMETERS_SEED);
+  const [peoplePolicies, setPeoplePolicies] = useState(PEOPLE_POLICIES_SEED);
+  const [peopleAudiences, setPeopleAudiences] = useState(PEOPLE_AUDIENCES_SEED);
+  const [peopleTaxonomy, setPeopleTaxonomy] = useState(PEOPLE_TAXONOMY_SEED);
   const [editingId, setEditingId] = useState(null);
   const [toast, setToast] = useState("");
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  const isPeople = engine === "people";
+  const activePolicies = isPeople ? peoplePolicies : policies;
+  const setActivePolicies = isPeople ? setPeoplePolicies : setPolicies;
+  const activeParameters = isPeople ? peopleParameters : parameters;
+  const setActiveParameters = isPeople ? setPeopleParameters : setParameters;
+  const activeAudiences = isPeople ? peopleAudiences : audiences;
+  const setActiveAudiences = isPeople ? setPeopleAudiences : setAudiences;
+  const activeTaxonomy = isPeople ? peopleTaxonomy : taxonomy;
+  const setActiveTaxonomy = isPeople ? setPeopleTaxonomy : setTaxonomy;
+  const activeDataSources = getEngineDataSources(engine);
 
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(""), 2200); }
 
   function openBuilder(id) {
-    const policy = policies.find((p) => p.id === id);
-    setConfigMode(policy?.configMode || "v3");
     setEditingId(id);
     setView("builder");
   }
-  function newPolicy() { setConfigMode("v3"); setEditingId("new"); setView("builder"); }
+  function newPolicy() { setEditingId("new"); setView("builder"); }
   const inBuilder = view === "builder";
 
   return (
-    <div className="flex min-h-screen bg-[#f8f8fb] text-foreground">
+    <div className="flex h-screen overflow-hidden bg-[#f8f8fb] text-foreground">
       {!inBuilder && (
         <AppSidebar
           view={view}
           setView={setView}
           setEditingId={setEditingId}
-          collapsed={sidebarCollapsed}
-          setCollapsed={setSidebarCollapsed}
+          engine={engine}
+          setEngine={setEngine}
         />
       )}
 
       {/* Main */}
-      <main className="min-w-0 flex-1">
-        {view === "library" && <LibraryView policies={policies} openBuilder={openBuilder} newPolicy={newPolicy} />}
-        {view === "audiences" && <AudiencesView audiences={audiences} setAudiences={setAudiences} showToast={showToast} />}
-        {view === "messages" && (
+      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+        {view === "library" && (
+          <LibraryView
+            policies={activePolicies}
+            openBuilder={openBuilder}
+            newPolicy={newPolicy}
+            title={isPeople ? "People Policy Library" : "Policy Library"}
+            subtitle={isPeople ? `${activePolicies.length} policies · Leave & Attendance (India)` : undefined}
+          />
+        )}
+        {view === "leave_rules" && isPeople && (
+          <DomainPolicyView pageKey="leave_rules" policies={activePolicies} parameters={activeParameters} openBuilder={openBuilder} />
+        )}
+        {view === "attendance_rules" && isPeople && (
+          <DomainPolicyView pageKey="attendance_rules" policies={activePolicies} parameters={activeParameters} openBuilder={openBuilder} />
+        )}
+        {view === "absenteeism" && isPeople && (
+          <DomainPolicyView pageKey="absenteeism" policies={activePolicies} parameters={activeParameters} openBuilder={openBuilder} />
+        )}
+        {view === "audiences" && (
+          <AudiencesView
+            audiences={activeAudiences}
+            setAudiences={setActiveAudiences}
+            showToast={showToast}
+            dataSources={activeDataSources}
+          />
+        )}
+        {view === "messages" && !isPeople && (
           <PlaceholderView
             title="Message Library"
             description="Notification templates and outbound messages used by policy outcomes."
             icon={MessageSquare}
           />
         )}
-        {view === "hitl" && (
+        {view === "hitl" && !isPeople && (
           <PlaceholderView
             title="HITL Registry"
             description="Human-in-the-loop approval gates, approvers, and escalation rules."
             icon={UserCheck}
           />
         )}
-        {view === "testlab" && (
+        {view === "testlab" && !isPeople && (
           <PlaceholderView
             title="Test Lab"
             description="Run policy scenarios against sample candidate and workflow data."
             icon={Waypoints}
           />
         )}
-        {view === "lists" && <ListsView />}
-        {view === "parameters" && <ParametersView parameters={parameters} setParameters={setParameters} showToast={showToast} />}
+        {view === "lists" && !isPeople && <ListsView />}
+        {view === "parameters" && (
+          <ParametersView parameters={activeParameters} setParameters={setActiveParameters} showToast={showToast} />
+        )}
         {view === "types" && <TypesView />}
-        {view === "functions" && <FunctionsView taxonomy={taxonomy} setTaxonomy={setTaxonomy} showToast={showToast} />}
+        {view === "functions" && (
+          <FunctionsView taxonomy={activeTaxonomy} setTaxonomy={setActiveTaxonomy} showToast={showToast} />
+        )}
         {view === "builder" && (
           <BuilderView
             policyId={editingId}
-            policies={policies}
-            setPolicies={setPolicies}
-            audiences={audiences}
-            setAudiences={setAudiences}
-            taxonomy={taxonomy}
-            parameters={parameters}
-            configMode={configMode}
+            policies={activePolicies}
+            setPolicies={setActivePolicies}
+            audiences={activeAudiences}
+            setAudiences={setActiveAudiences}
+            taxonomy={activeTaxonomy}
+            parameters={activeParameters}
+            engine={engine}
             onExit={() => { setView("library"); setEditingId(null); }}
             showToast={showToast}
           />
         )}
       </main>
-
-      <ConfiguratorModeSwitcher
-        mode={configMode}
-        onChange={setConfigMode}
-        insetLeft={inBuilder ? "1.5rem" : sidebarCollapsed ? "4.5rem" : "17.5rem"}
-      />
 
       {toast && (
         <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm text-primary-foreground shadow-lg">
@@ -2289,7 +2699,7 @@ export default function PolicyLibraryApp() {
 
 /* ---------------- Library view ---------------- */
 
-function LibraryView({ policies, openBuilder, newPolicy }) {
+function LibraryView({ policies, openBuilder, newPolicy, title = "Policy Library", subtitle }) {
   const [typeFilter, setTypeFilter] = useState("All");
   const [search, setSearch] = useState("");
   const filtered = policies.filter((p) =>
@@ -2300,8 +2710,8 @@ function LibraryView({ policies, openBuilder, newPolicy }) {
     <div className="mx-auto max-w-7xl px-6 py-6">
       <div className="mb-5 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Policy Library</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">{policies.length} policies across {POLICY_TYPES.length} types</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">{subtitle || `${policies.length} policies across ${POLICY_TYPES.length} types`}</p>
         </div>
         <Button onClick={newPolicy}><Plus className="h-4 w-4" /> New Policy</Button>
       </div>
@@ -2383,12 +2793,141 @@ function LibraryView({ policies, openBuilder, newPolicy }) {
   );
 }
 
+const PEOPLE_DOMAIN_PAGES = {
+  leave_rules: {
+    title: "Leave Management",
+    description: "Entitlement, accrual, application, approval routing, and carry-forward rules from the Leave & Attendance Policy (India).",
+    category: "leave",
+    icon: Calendar,
+    highlights: [
+      "24 days annual leave/year, accruing at 2 days/month",
+      "Approval routing by duration: Manager (1–3d), Manager + HR (4–10d), HR approval (>10d)",
+      "Maternity/Paternity auto-approved on documentation",
+      "5-day carry-forward cap; sick/casual leave lapses at year-end",
+    ],
+  },
+  attendance_rules: {
+    title: "Attendance",
+    description: "Check-in/out, grace period, regularisation windows, and payroll cycle lock enforcement.",
+    category: "attendance",
+    icon: Clock,
+    highlights: [
+      "15-minute late arrival grace period",
+      "Regularisation within 3 working days of discrepancy",
+      "Monthly payroll cycle (26th–25th) with cycle lock",
+      "Incomplete check-in/out triggers soft stop",
+    ],
+  },
+  absenteeism: {
+    title: "Absenteeism",
+    description: "Pattern detection and escalation thresholds for unauthorised or repeated absence.",
+    category: "absenteeism",
+    icon: AlertTriangle,
+    highlights: [
+      "Monday/Friday pattern × 3 → manager discussion + HR flag",
+      "3 instances in 3 months → informal review",
+      "10%+ rolling 12-month rate → formal HR review",
+      "3+ consecutive unexplained days → Manager + HR formal review",
+    ],
+  },
+};
+
+function DomainPolicyView({ pageKey, policies, parameters, openBuilder }) {
+  const page = PEOPLE_DOMAIN_PAGES[pageKey];
+  const Icon = page.icon;
+  const domainPolicies = policies.filter((p) => p.category === page.category);
+  const relatedParams = parameters.filter((p) =>
+    p.usedBy?.some((u) => domainPolicies.some((pol) => pol.name === u))
+  );
+
+  return (
+    <div className="mx-auto max-w-7xl px-6 py-6">
+      <div className="mb-6">
+        <div className="mb-2 flex items-center gap-2">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
+            <Icon className="h-4 w-4 text-primary" />
+          </div>
+          <h1 className="text-2xl font-semibold tracking-tight">{page.title}</h1>
+        </div>
+        <p className="max-w-3xl text-sm text-muted-foreground">{page.description}</p>
+      </div>
+
+      <div className="mb-6 grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Policy highlights</CardTitle>
+            <CardDescription>Key rules from Leave_Attendance_Policy.docx.pdf</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-2 text-sm text-muted-foreground">
+              {page.highlights.map((h) => (
+                <li key={h} className="flex gap-2">
+                  <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                  <span>{h}</span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Parameters</CardTitle>
+            <CardDescription>Configurable thresholds for this domain</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {relatedParams.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No domain-specific parameters configured.</p>
+            ) : (
+              <div className="space-y-2">
+                {relatedParams.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
+                    <span className="font-medium">{p.label}</span>
+                    <Badge variant="secondary">{p.value}{p.unit ? ` ${p.unit}` : ""}</Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="overflow-hidden">
+        <CardHeader className="border-b bg-muted/20 py-3">
+          <CardTitle className="text-base">{domainPolicies.length} policies in this domain</CardTitle>
+        </CardHeader>
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead>Name</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>Trigger</TableHead>
+              <TableHead>Priority</TableHead>
+              <TableHead>Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {domainPolicies.map((p) => (
+              <TableRow key={p.id} onClick={() => openBuilder(p.id)} className="cursor-pointer">
+                <TableCell className="font-medium">{p.name}</TableCell>
+                <TableCell><Badge variant="outline">{p.type}</Badge></TableCell>
+                <TableCell className="text-xs text-muted-foreground">{getPolicyTriggerLabel(p)}</TableCell>
+                <TableCell><PriorityBadge policy={p} /></TableCell>
+                <TableCell><StatusDot status={p.status} /></TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </Card>
+    </div>
+  );
+}
+
 /* ---------------- Audiences view ---------------- */
 
-function AudiencesView({ audiences, setAudiences, showToast }) {
+function AudiencesView({ audiences, setAudiences, showToast, dataSources = DATA_SOURCES }) {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
-  const [groups, setGroups] = useState([{ id: uid++, rows: [{ id: uid++, source: DATA_SOURCES[0], operator: "IS IN", value: "" }] }]);
+  const [groups, setGroups] = useState([{ id: uid++, rows: [{ id: uid++, source: dataSources[0], operator: "IS IN", value: "" }] }]);
   const [orGate, setOrGate] = useState(false);
   const [expanded, setExpanded] = useState(null);
 
@@ -2396,7 +2935,7 @@ function AudiencesView({ audiences, setAudiences, showToast }) {
     if (!name.trim()) return;
     const summary = groups.flatMap((g) => g.rows).filter((r) => r.value).map((r) => ({ source: r.source, operator: r.operator, value: r.value }));
     setAudiences([...audiences, { id: `aud-${uid++}`, name, summary, usedBy: [] }]);
-    setCreating(false); setName(""); setGroups([{ id: uid++, rows: [{ id: uid++, source: DATA_SOURCES[0], operator: "IS IN", value: "" }] }]);
+    setCreating(false); setName(""); setGroups([{ id: uid++, rows: [{ id: uid++, source: dataSources[0], operator: "IS IN", value: "" }] }]);
     showToast("Audience created");
   }
 
@@ -2414,7 +2953,7 @@ function AudiencesView({ audiences, setAudiences, showToast }) {
             <Field label="Audience name">
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. APAC Contract Candidates" />
             </Field>
-            <ConditionGroupBuilder groups={groups} setGroups={setGroups} orGate={orGate} setOrGate={setOrGate} />
+            <ConditionGroupBuilder groups={groups} setGroups={setGroups} orGate={orGate} setOrGate={setOrGate} dataSources={dataSources} />
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setCreating(false)}>Cancel</Button>
               <Button onClick={save}><Save className="h-3.5 w-3.5" /> Save Audience</Button>
@@ -2893,8 +3432,10 @@ const SAMPLE_DOCS = [
   "Interview_Intelligence_SOP.pdf",
 ];
 
-function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, parameters, configMode, onExit, showToast }) {
+function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, parameters, engine = "hiring", isAdmin = true, onExit, showToast }) {
   const existing = policies.find((p) => p.id === policyId);
+  const engineTriggers = getEngineTriggers(engine);
+  const engineDataSources = getEngineDataSources(engine);
   const [activeTab, setActiveTab] = useState("context");
   const [configSection, setConfigSection] = useState("general");
   const [name, setName] = useState(existing?.name || "Untitled Policy");
@@ -2908,59 +3449,43 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, par
   );
 
   const [aiPrompt, setAiPrompt] = useState(() => defaultContextPrompt(existing));
-  const [documents, setDocuments] = useState(existing ? [SAMPLE_DOCS[0], SAMPLE_DOCS[2]] : []);
+  const [documents, setDocuments] = useState(existing
+    ? (engine === "people" ? [PEOPLE_POLICY_SOURCE.LEAVE_ATTENDANCE] : [SAMPLE_DOCS[0], SAMPLE_DOCS[2]])
+    : []);
   const [aiGenerated, setAiGenerated] = useState(!!existing);
   const [generating, setGenerating] = useState(false);
   const [aiChatOpen, setAiChatOpen] = useState(false);
 
   const [typeKey, setTypeKey] = useState(existing?.type || "Guardrail");
   const type = POLICY_TYPES.find((t) => t.key === typeKey);
-  const seededRule = seedRuleForPolicy(existing, type, configMode);
+  const seededRule = seedRuleForPolicy(existing, type);
 
   const [domain, setDomain] = useState(existing?.domain || Object.keys(taxonomy)[0]);
   const [fn, setFn] = useState(existing?.fn || taxonomy[Object.keys(taxonomy)[0]][0]);
   const [personas, setPersonas] = useState(existing?.personas || []);
-  const [trigger, setTrigger] = useState(existing?.trigger || TRIGGERS[0]);
+  const [trigger] = useState(existing?.trigger || engineTriggers[0]);
   const [priority, setPriority] = useState(() => defaultPolicyPriority(existing));
   const mandatory = !!existing?.mandatory;
-  const [controlledAction, setControlledAction] = useState(() => defaultControlledAction(existing));
+  const [isGlobal, setIsGlobal] = useState(() => existing?.global ?? !!existing?.mandatory);
   const [applicability, setApplicability] = useState({ ...defaultApplicability, ...(existing?.applicability || {}) });
 
   const [scopeBlocks, setScopeBlocks] = useState(() => initScopeBlocks(existing));
+  const [scopeOrGate, setScopeOrGate] = useState(() => !!existing?.scopeOrGate);
 
-  const [branches, setBranches] = useState(() => hydrateBranchesForMode(
+  const [branches, setBranches] = useState(() => hydrateBranches(
     branchesFromSeed(type, seededRule),
-    { existing, fn, policyControlledAction: defaultControlledAction(existing), policyTrigger: existing?.trigger || TRIGGERS[0], configMode },
+    { existing, fn, policyControlledAction: defaultControlledAction(existing), policyTrigger: existing?.trigger || engineTriggers[0] },
   ));
 
-  const controlledActionOptions = getControlledActionOptions(fn);
-
-  const modeInitializedRef = useRef(false);
-
-  function reloadBranchesForConfiguratorMode(nextMode) {
-    const seed = seedRuleForPolicy(existing, type, nextMode);
-    setBranches(hydrateBranchesForMode(
-      branchesFromSeed(type, seed),
-      { existing, fn, policyControlledAction: controlledAction, policyTrigger: trigger, configMode: nextMode },
-    ));
-  }
-
   useEffect(() => {
-    if (!modeInitializedRef.current) {
-      modeInitializedRef.current = true;
-      return;
-    }
-    reloadBranchesForConfiguratorMode(configMode);
-  }, [configMode]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (activeTab !== "configuration" || configMode !== "v3") {
+    if (activeTab !== "configuration") {
       setAiChatOpen(false);
     }
-  }, [activeTab, configMode]);
+  }, [activeTab]);
 
-  const linkedWorkflows = WORKFLOWS_SEED.filter((w) => w.policies.includes(existing?.id));
-  const coPolicies = getCoPoliciesOnWorkflows(existing?.id, policies);
+  const linkedWorkflows = getWorkflowsForEngine(engine).filter((w) => w.policies.includes(existing?.id));
+  const coPolicies = getCoPoliciesOnWorkflowsForEngine(existing?.id, policies, engine);
+  const configReadOnly = isGlobal && !isAdmin;
 
   function addElseIf() {
     const insertAt = branches.length - 1;
@@ -2994,33 +3519,25 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, par
   function removeDocument(doc) { setDocuments(documents.filter((d) => d !== doc)); }
 
   function publish() {
+    if (configReadOnly) {
+      showToast("Global policies can only be edited by platform admins");
+      return;
+    }
     const scope = scopeBlocks.filter((b) => b.type === "audience").map((b) => b.audienceName);
     const scopeInline = scopeBlocks.some((b) => b.type === "custom");
-    const base = { id: existing?.id || `p${uid++}`, name, type: typeKey, domain, fn, scope, scopeInline, status, personas, applicability, source: existing?.source, configMode, priority: mandatory ? undefined : priority, mandatory: mandatory || undefined };
-    const branchLevelRecord = {
+    const base = { id: existing?.id || (engine === "people" ? `pe${uid++}` : `p${uid++}`), name, type: typeKey, domain, fn, scope, scopeInline, status, personas, applicability, source: existing?.source || (engine === "people" ? PEOPLE_POLICY_SOURCE.LEAVE_ATTENDANCE : undefined), priority: mandatory ? undefined : priority, mandatory: mandatory || undefined, global: isGlobal || undefined };
+    const record = {
       ...base,
+      scopeOrGate: scopeOrGate || undefined,
+      trigger: branches[0]?.trigger || trigger,
       branchSettings: branches.map((b, index) => ({
         index,
         kind: b.kind,
+        trigger: b.trigger,
         controlledAction: b.controlledAction,
         controlledActions: getBranchControlledActions(b),
       })),
     };
-    const record = configMode === "rule"
-      ? { ...branchLevelRecord, trigger }
-      : configMode === "v3"
-      ? {
-          ...branchLevelRecord,
-          trigger: branches[0]?.trigger || trigger,
-          branchSettings: branches.map((b, index) => ({
-            index,
-            kind: b.kind,
-            trigger: b.trigger,
-            controlledAction: b.controlledAction,
-            controlledActions: getBranchControlledActions(b),
-          })),
-        }
-      : { ...base, trigger, controlledAction };
     if (existing) setPolicies(policies.map((p) => p.id === record.id ? record : p));
     else setPolicies([...policies, record]);
     showToast(existing ? "Policy updated" : "Policy created");
@@ -3035,11 +3552,11 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, par
       <div className="sticky top-0 z-20 shrink-0 border-b bg-white/85 px-6 py-4 backdrop-blur-xl">
         <div className="relative flex items-center gap-4">
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <Button variant="outline" size="icon" className="h-9 w-9 shrink-0 bg-white shadow-sm" onClick={onExit}>
-              <ChevronLeft className="h-4 w-4" />
+            <Button variant="outline" size="icon" className="h-7 w-7 shrink-0 bg-white shadow-sm" onClick={onExit}>
+              <ChevronLeft className="h-3.5 w-3.5" />
             </Button>
-            <Input value={name} onChange={(e) => setName(e.target.value)}
-              className="h-auto min-w-0 max-w-[min(36vw,28rem)] border-0 bg-transparent px-0 text-2xl font-semibold tracking-[-0.03em] shadow-none focus-visible:ring-0" />
+            <Input value={name} onChange={(e) => setName(e.target.value)} readOnly={configReadOnly}
+              className="h-auto min-w-0 max-w-[min(36vw,28rem)] border-0 bg-transparent px-0 text-xl font-semibold tracking-[-0.03em] shadow-none focus-visible:ring-0" />
           </div>
 
           <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
@@ -3061,26 +3578,29 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, par
           </div>
 
           <div className="flex flex-1 items-center justify-end gap-2">
+            {configReadOnly && (
+              <Badge variant="secondary" className="hidden sm:inline-flex">View only</Badge>
+            )}
             {status === "Draft" ? (
-              <Button variant="outline" onClick={() => setStatus("Active")}>Publish</Button>
+              <Button variant="outline" disabled={configReadOnly} onClick={() => setStatus("Active")}>Publish</Button>
             ) : (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline">Active</Button>
+                  <Button variant="outline" disabled={configReadOnly}>Active</Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-40">
-                  <DropdownMenuItem onClick={() => setStatus("Draft")}>Move to draft</DropdownMenuItem>
+                  <DropdownMenuItem disabled={configReadOnly} onClick={() => setStatus("Draft")}>Move to draft</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-            <Button onClick={publish} className="shadow-primary/20">
+            <Button onClick={publish} disabled={configReadOnly} className="shadow-primary/20">
               {existing ? "Save changes" : "Save"}
             </Button>
           </div>
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 items-stretch overflow-hidden">
+      <div className="flex min-h-0 flex-1 items-stretch overflow-visible">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {activeTab === "context" && (
           <ContextTab
@@ -3088,47 +3608,15 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, par
             documents={documents} addDocument={addDocument} removeDocument={removeDocument}
             generating={generating} generateFromAI={generateFromAI} aiGenerated={aiGenerated}
             name={name} typeKey={typeKey} domain={domain} fn={fn} scopeLabel={scopeLabel}
-            personas={personas} branches={branches} type={type} trigger={trigger} controlledAction={controlledAction}
-            configMode={configMode} parameters={parameters}
+            personas={personas} branches={branches} type={type}
+            parameters={parameters}
             description={description} onEditConfig={() => setActiveTab("configuration")}
+            readOnly={configReadOnly}
           />
         )}
 
-        {activeTab === "configuration" && configMode === "policy" && (
-          <ConfigurationTab
-            configSection={configSection} setConfigSection={setConfigSection}
-            typeKey={typeKey} setTypeKey={setTypeKey} type={type} setBranches={setBranches}
-            domain={domain} setDomain={setDomain} fn={fn} setFn={setFn} taxonomy={taxonomy}
-            description={description} setDescription={setDescription}
-            personas={personas} trigger={trigger} setTrigger={setTrigger}
-            controlledAction={controlledAction} setControlledAction={setControlledAction}
-            applicability={applicability} setApplicability={setApplicability}
-            scopeBlocks={scopeBlocks} setScopeBlocks={setScopeBlocks}
-            audiences={audiences}
-            branches={branches} addElseIf={addElseIf} removeBranch={removeBranch} updateBranch={updateBranch}
-            priority={priority} setPriority={setPriority} mandatory={mandatory} coPolicies={coPolicies}
-          />
-        )}
-
-        {activeTab === "configuration" && configMode === "rule" && (
+        {activeTab === "configuration" && (
           <ConfigurationTabRuleLevel
-            configuratorVariant="v2"
-            configSection={configSection} setConfigSection={setConfigSection}
-            typeKey={typeKey} setTypeKey={setTypeKey} type={type} setBranches={setBranches}
-            domain={domain} setDomain={setDomain} fn={fn} setFn={setFn} taxonomy={taxonomy}
-            description={description} setDescription={setDescription}
-            personas={personas}
-            applicability={applicability} setApplicability={setApplicability}
-            scopeBlocks={scopeBlocks} setScopeBlocks={setScopeBlocks}
-            audiences={audiences}
-            branches={branches} addElseIf={addElseIf} removeBranch={removeBranch} updateBranch={updateBranch}
-            priority={priority} setPriority={setPriority} mandatory={mandatory} coPolicies={coPolicies}
-          />
-        )}
-
-        {activeTab === "configuration" && configMode === "v3" && (
-          <ConfigurationTabRuleLevel
-            configuratorVariant="v3"
             configSection={configSection} setConfigSection={setConfigSection}
             typeKey={typeKey} setTypeKey={setTypeKey} type={type} setBranches={setBranches}
             domain={domain} setDomain={setDomain} fn={fn} setFn={setFn} taxonomy={taxonomy}
@@ -3136,10 +3624,13 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, par
             personas={personas} policyName={name}
             applicability={applicability} setApplicability={setApplicability}
             scopeBlocks={scopeBlocks} setScopeBlocks={setScopeBlocks}
+            scopeOrGate={scopeOrGate} setScopeOrGate={setScopeOrGate}
             audiences={audiences}
             parameters={parameters}
             branches={branches} addElseIf={addElseIf} removeBranch={removeBranch} updateBranch={updateBranch}
             priority={priority} setPriority={setPriority} mandatory={mandatory} coPolicies={coPolicies}
+            isGlobal={isGlobal} setIsGlobal={setIsGlobal} readOnly={configReadOnly}
+            engine={engine} dataSources={engineDataSources} triggers={engineTriggers}
           />
         )}
 
@@ -3148,7 +3639,7 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, par
         )}
         </div>
 
-      {activeTab === "configuration" && configMode === "v3" && (
+      {activeTab === "configuration" && !configReadOnly && (
         aiChatOpen ? (
           <ConfigurationAiChatPanel
             onClose={() => setAiChatOpen(false)}
@@ -3169,12 +3660,17 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, par
 /* ---------------- Context tab (AI-first) ---------------- */
 
 function ContextTab({ aiPrompt, setAiPrompt, documents, addDocument, removeDocument, generating, generateFromAI, aiGenerated,
-  name, typeKey, domain, fn, scopeLabel, personas, branches, type, trigger, controlledAction, configMode, parameters, description, onEditConfig }) {
+  name, typeKey, domain, fn, scopeLabel, personas, branches, type, parameters, description, onEditConfig, readOnly = false }) {
   const availableDocs = SAMPLE_DOCS.filter((d) => !documents.includes(d));
 
   return (
     <div className={cn("mx-auto grid max-w-6xl flex-1 gap-6 overflow-auto px-6 py-6", aiGenerated && "xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)] xl:items-stretch")}>
-      <Card className="flex min-h-[calc(100vh-11rem)] flex-col overflow-hidden">
+      {readOnly && (
+        <div className="col-span-full">
+          <PolicyConfigReadOnlyNotice />
+        </div>
+      )}
+      <Card className={cn("flex min-h-[calc(100vh-11rem)] flex-col overflow-hidden", readOnly && "pointer-events-none select-none opacity-60")}>
         <CardHeader className="shrink-0 border-b bg-gradient-to-br from-primary/[0.08] via-background to-background py-5">
           <div className="flex items-center gap-2">
             <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm shadow-primary/20">
@@ -3239,7 +3735,7 @@ function ContextTab({ aiPrompt, setAiPrompt, documents, addDocument, removeDocum
       </Card>
 
       {aiGenerated && (
-        <Card className="overflow-hidden">
+        <Card className={cn("overflow-hidden", readOnly && "pointer-events-none select-none opacity-60")}>
           <CardHeader className="flex-row items-center justify-between space-y-0 border-b bg-muted/20 py-4">
             <div className="space-y-1">
               <CardTitle className="text-base">Policy preview</CardTitle>
@@ -3267,18 +3763,6 @@ function ContextTab({ aiPrompt, setAiPrompt, documents, addDocument, removeDocum
                 <span className="shrink-0 text-xs text-muted-foreground">Function</span>
                 <span className="ml-auto truncate text-right text-sm">{domain} → {fn}</span>
               </div>
-              {configMode === "policy" && (
-                <>
-                  <div className="flex items-center gap-2 rounded-lg border bg-background px-3 py-2 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-                    <span className="shrink-0 text-xs text-muted-foreground">Trigger</span>
-                    <span className="ml-auto truncate text-right text-sm">{trigger}</span>
-                  </div>
-                  <div className="flex items-center gap-2 rounded-lg border bg-background px-3 py-2 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-                    <span className="shrink-0 text-xs text-muted-foreground">Action</span>
-                    <span className="ml-auto truncate text-right text-sm">{controlledAction || "—"}</span>
-                  </div>
-                </>
-              )}
               <div className="flex items-center gap-2 rounded-lg border bg-background px-3 py-2 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
                 <span className="shrink-0 text-xs text-muted-foreground">Scope</span>
                 <span className="ml-auto truncate text-right text-sm">{scopeLabel}</span>
@@ -3293,23 +3777,22 @@ function ContextTab({ aiPrompt, setAiPrompt, documents, addDocument, removeDocum
             )}
 
             <div>
-              <span className="text-xs text-muted-foreground">{(configMode === "rule" || configMode === "v3") ? "Rules" : "What it does"}</span>
+              <span className="text-xs text-muted-foreground">Rules</span>
               <div className="mt-2 space-y-2">
                 {branches.map((b, bi) => (
                   <div key={b.id} className="flex items-start gap-2.5 text-sm">
                     <span className="mt-0.5 w-14 shrink-0 text-xs text-muted-foreground">
-                      {(configMode === "rule" || configMode === "v3") ? `Rule ${bi + 1}` : b.kind}
+                      {`Rule ${bi + 1}`}
                     </span>
                     <div className="flex-1">
-                      {configMode === "v3" && b.trigger && (
+                      {b.trigger && (
                         <p className="mb-0.5 text-[11px] text-muted-foreground">{b.trigger}</p>
                       )}
-                      {(configMode === "rule" || configMode === "v3") && getBranchControlledActions(b).length > 0 && (
+                      {getBranchControlledActions(b).length > 0 && (
                         <p className="mb-0.5 text-[11px] text-muted-foreground">{formatControlledActionsList(getBranchControlledActions(b))}</p>
                       )}
                       {b.kind !== "ELSE" && b.groups?.flatMap((g) => g.rows).filter((r) => r.value).length > 0 ? (
                         <span className="text-muted-foreground">
-                          {configMode === "policy" ? "When " : ""}
                           {b.groups.flatMap((g) => g.rows).filter((r) => r.value).map((r) => formatConditionClause(r, parameters)).join(" and ")}
                         </span>
                       ) : b.kind === "ELSE" ? (
@@ -3320,8 +3803,7 @@ function ContextTab({ aiPrompt, setAiPrompt, documents, addDocument, removeDocum
                       <span className="mx-1.5 text-muted-foreground">→</span>
                       <OutcomeWithAction
                         outcome={b.outcome}
-                        controlledActions={(configMode === "rule" || configMode === "v3") ? getBranchControlledActions(b) : undefined}
-                        controlledAction={configMode === "policy" ? controlledAction : undefined}
+                        controlledActions={getBranchControlledActions(b)}
                       />
                       {b.requiresApproval && (
                         <span className="ml-2 text-xs text-amber-700">needs {b.approver} approval{b.deferToStage ? ` · enforce at ${b.deferToStage}` : ""}</span>
@@ -3347,235 +3829,7 @@ function ContextTab({ aiPrompt, setAiPrompt, documents, addDocument, removeDocum
   );
 }
 
-/* ---------------- Configuration tab (sidenav) ---------------- */
-
-function ConfigurationTab({ configSection, setConfigSection, typeKey, setTypeKey, type, setBranches,
-  domain, setDomain, fn, setFn, taxonomy, description, setDescription, personas,
-  trigger, setTrigger, controlledAction, setControlledAction,
-  applicability, setApplicability,
-  scopeBlocks, setScopeBlocks, audiences,
-  branches, addElseIf, removeBranch, updateBranch,
-  priority, setPriority, mandatory, coPolicies }) {
-  const controlledActionOptions = getControlledActionOptions(fn);
-
-  function changeDomain(nextDomain) {
-    const nextFn = taxonomy[nextDomain][0];
-    setDomain(nextDomain);
-    setFn(nextFn);
-    const options = getControlledActionOptions(nextFn);
-    if (!options.includes(controlledAction)) setControlledAction(options[0] || "");
-  }
-
-  function changeFn(nextFn) {
-    setFn(nextFn);
-    const options = getControlledActionOptions(nextFn);
-    if (!options.includes(controlledAction)) setControlledAction(options[0] || "");
-  }
-  return (
-    <div className="flex min-h-0 flex-1 items-stretch overflow-hidden">
-      <div className="w-52 shrink-0 self-stretch overflow-y-auto border-r bg-background py-4">
-        <p className="mb-2 px-4 text-xs font-medium text-muted-foreground">Sections</p>
-        <nav className="space-y-1 px-2">
-          {CONFIG_SECTIONS.map((s) => {
-            const Icon = s.icon;
-            const active = configSection === s.id;
-            return (
-              <Button key={s.id} variant="ghost"
-                className={cn("w-full justify-start gap-2.5 font-normal", active && SELECTED_CHIP_CLASSES)}
-                onClick={() => setConfigSection(s.id)}>
-                <Icon className="h-4 w-4" /> {s.label}
-              </Button>
-            );
-          })}
-        </nav>
-      </div>
-
-      {/* section content */}
-      <ConfigurationSectionContent>
-        {configSection === "general" && (
-          <SectionCard title="General" subtitle="Type, taxonomy, and description" icon={FileText}>
-            <Field label="Policy type" hint="Determines allowed outcomes in Rules">
-              <div className="grid grid-cols-4 gap-2">
-                {POLICY_TYPES.map((t) => {
-                  const Icon = t.icon;
-                  const active = typeKey === t.key;
-                  return (
-                    <button key={t.key} onClick={() => { setTypeKey(t.key); setBranches([
-                      createBranch(t, { kind: "IF" }),
-                    ]); }}
-                      className={cn("flex flex-col items-center gap-1.5 rounded-lg border p-3 text-center transition-colors",
-                        active ? SELECTED_CHIP_CLASSES : "hover:border-muted-foreground/40")}>
-                      <Icon className={cn("h-4 w-4", active ? "text-primary" : "text-muted-foreground")} />
-                      <span className={cn("text-xs font-semibold", active ? "text-primary" : "text-foreground")}>{t.key}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="mt-2 text-[11px] text-muted-foreground">{type.description}</p>
-            </Field>
-
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Domain">
-                <SimpleSelect value={domain} onChange={changeDomain} options={Object.keys(taxonomy)} />
-              </Field>
-              <Field label="Function" hint="implied by Domain">
-                <SimpleSelect value={fn} onChange={changeFn} options={taxonomy[domain] || []} />
-              </Field>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Trigger" hint="When the policy is evaluated">
-                <SimpleSelect value={trigger} onChange={setTrigger} options={TRIGGERS} />
-              </Field>
-              <Field label="Controlled action" hint="The specific capability this policy gates">
-                <SimpleSelect
-                  value={controlledAction}
-                  onChange={setControlledAction}
-                  options={controlledActionOptions}
-                />
-              </Field>
-            </div>
-
-            <Field label="Description">
-              <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
-            </Field>
-
-            <PriorityConfigField priority={priority} setPriority={setPriority} mandatory={mandatory} />
-          </SectionCard>
-        )}
-
-        {configSection === "scope" && (
-          <SectionCard title="Scope" subtitle="Applicability, audience groups, and custom conditions — combined with AND" icon={MapPin}>
-            <Field label="Applicability" hint="Tenant, location, and job dimensions">
-              <div className="grid grid-cols-2 gap-3">
-                {Object.keys(APPLICABILITY).map((dim) => (
-                  <div key={dim} className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">{APPLICABILITY[dim].label}</Label>
-                    <SimpleSelect
-                      value={applicability[dim]}
-                      onChange={(v) => setApplicability({ ...applicability, [dim]: v })}
-                      options={APPLICABILITY[dim].options}
-                    />
-                  </div>
-                ))}
-              </div>
-            </Field>
-            <Separator />
-            <ScopeBuilder scopeBlocks={scopeBlocks} setScopeBlocks={setScopeBlocks} audiences={audiences} />
-          </SectionCard>
-        )}
-
-        {configSection === "rules" && (
-          <SectionCard title="Rules" subtitle={`IF / ELSE IF / ELSE branches · FIRST_MATCH · one ${typeKey} outcome per branch`} icon={GitBranch}>
-            {branches.map((b, bi) => (
-              <div key={b.id}>
-                <div className="overflow-hidden rounded-lg border">
-                  <RuleBranchHeader
-                    ruleNumber={bi + 1}
-                    kind={b.kind}
-                    onRemove={() => removeBranch(b.id)}
-                  />
-                  <div className="space-y-3.5 p-3.5">
-                    {b.kind !== "ELSE" && (
-                      <ConditionGroupBuilder
-                        groups={b.groups}
-                        setGroups={(g) => updateBranch(b.id, { groups: g })}
-                        orGate={b.orGate}
-                        setOrGate={(v) => updateBranch(b.id, { orGate: v })}
-                      />
-                    )}
-                    <Field label={`Outcome (${typeKey})`}>
-                      <OutcomeSelect
-                        outcomes={type.outcomes}
-                        value={b.outcome}
-                        onChange={(v) => updateBranch(b.id, { outcome: v })}
-                      />
-                      {controlledAction && (
-                        <p className="mt-1.5 text-xs text-muted-foreground">
-                          Applies to <span className="font-medium text-foreground">{controlledAction}</span>
-                        </p>
-                      )}
-                    </Field>
-                    <BranchEnforcementEditor
-                      branch={b}
-                      onChange={(patch) => updateBranch(b.id, patch)}
-                    />
-                    <BranchActionsEditor
-                      branch={b}
-                      type={type}
-                      onChange={(actions) => updateBranch(b.id, { actions })}
-                    />
-                    <BranchNotificationsEditor
-                      branch={b}
-                      onChange={(notifications) => updateBranch(b.id, { notifications })}
-                    />
-                  </div>
-                </div>
-                {bi < branches.length - 1 && (
-                  <div className="flex items-center justify-center py-1.5 text-xs text-muted-foreground">
-                    <ArrowRight className="mr-1 h-3 w-3 rotate-90" /> if no match, continue
-                  </div>
-                )}
-              </div>
-            ))}
-            <Button variant="outline" className="w-full border-dashed" onClick={addElseIf}>
-              <Plus className="h-3.5 w-3.5" /> Add ELSE IF branch
-            </Button>
-          </SectionCard>
-        )}
-
-        {configSection === "summary" && (
-          <SectionCard title="Summary" subtitle="What this policy will do once published" icon={FileText}>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div><span className="mb-1 block text-xs text-muted-foreground">Type</span><Badge variant="outline">{typeKey}</Badge></div>
-              <div><span className="mb-1 block text-xs text-muted-foreground">Business Function</span><span>{domain} <ChevronRight className="inline h-3 w-3 opacity-50" /> {fn}</span></div>
-              <div><span className="mb-1 block text-xs text-muted-foreground">Trigger</span><Badge variant="secondary">{trigger}</Badge></div>
-              <div><span className="mb-1 block text-xs text-muted-foreground">Controlled action</span><Badge variant="outline">{controlledAction || "—"}</Badge></div>
-              <ConflictResolutionSummary priority={priority} mandatory={mandatory} coPolicies={coPolicies} />
-              <div><span className="mb-1 block text-xs text-muted-foreground">Personas</span>
-                {personas.length ? <div className="flex flex-wrap gap-1">{personas.map((p) => <Badge key={p} variant="outline">{p}</Badge>)}</div> : <span className="text-xs text-muted-foreground">Not set — derived at outcome level</span>}
-              </div>
-              <div className="col-span-2"><span className="mb-1 block text-xs text-muted-foreground">Scope</span>
-                <ScopeSummary scopeBlocks={scopeBlocks} applicability={applicability} />
-              </div>
-            </div>
-            <Separator />
-            <div>
-              <span className="mb-2 block text-xs text-muted-foreground">Branches ({branches.length})</span>
-              <div className="space-y-2.5">
-                {branches.map((b) => (
-                    <div key={b.id} className="space-y-1">
-                      <div className="flex flex-wrap items-center gap-2 text-xs">
-                        <Badge variant={branchVariant(b.kind)}>{b.kind}</Badge>
-                        <ArrowRight className="h-3 w-3 text-muted-foreground" />
-                        <OutcomeWithAction outcome={b.outcome} controlledAction={controlledAction} />
-                        {b.requiresApproval && (
-                          <Badge variant="outline" className="gap-1 border-amber-200 bg-amber-50 text-amber-700">
-                            <Check className="h-3 w-3" /> {b.approver} approval{b.deferToStage ? ` · enforce at ${b.deferToStage}` : ""}
-                          </Badge>
-                        )}
-                        {b.actions?.map((action) => (
-                          <Badge key={normalizeAction(action).id} variant="secondary">{formatActionLabel(action)}</Badge>
-                        ))}
-                        {b.notifications?.map((notification) => (
-                          <span key={notification.id} className="flex items-center gap-1 text-muted-foreground">
-                            <Bell className="h-3 w-3" />{notification.persona} · {notification.template}
-                          </span>
-                        ))}
-                      </div>
-                      {b.reason && <p className="pl-1 text-xs italic text-muted-foreground">“{b.reason}”</p>}
-                    </div>
-                ))}
-              </div>
-            </div>
-          </SectionCard>
-        )}
-      </ConfigurationSectionContent>
-    </div>
-  );
-}
-
-/* ---------------- V3 configuration AI assistant ---------------- */
+/* ---------------- Configuration AI assistant ---------------- */
 
 const AI_AGENT_AVATAR = "/ai-agent-avatar.png";
 const AI_INDIGO = "#312e81";
@@ -3583,7 +3837,7 @@ const AI_INDIGO = "#312e81";
 function buildConfigurationAiReply(input, { policyName, typeKey, configSection, branchCount }) {
   const text = input.toLowerCase();
   if (text.includes("trigger")) {
-    return "In V3, each rule can have its own trigger. Use the Trigger field at the top of each rule — for example Apply for soft stops and Offer for hard stops on no-poach policies.";
+    return "Each rule can have its own trigger. Use the Trigger field at the top of each rule — for example Apply for soft stops and Offer for hard stops on no-poach policies.";
   }
   if (text.includes("parameter") || text.includes("(x)")) {
     return "Click (x) in a condition value field to insert a parameter tag. Registered parameters live under Parameters in the sidebar — e.g. tier2CoolOffDays for cooling-off windows.";
@@ -3597,20 +3851,69 @@ function buildConfigurationAiReply(input, { policyName, typeKey, configSection, 
   return `For "${policyName}", I can help refine ${configSection === "rules" ? "conditions, triggers, and outcomes" : `the ${configSection} section`}. Try asking about triggers, parameters, or how to model a specific scenario.`;
 }
 
+const AI_NOTCH_OUTLINE_PATH = "M 36 104 Q 36 84 16 84 L 12 84 A 12 12 0 0 1 0 72 L 0 32 A 12 12 0 0 1 12 20 L 16 20 Q 36 20 36 0";
+
 function ConfigurationAiTab({ onClick }) {
+  const gradientId = useId().replace(/:/g, "");
+
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex shrink-0 flex-col items-center justify-center gap-2 self-center rounded-l-xl border border-r-0 border-border/80 bg-white px-3 py-4 shadow-[-6px_0_20px_rgba(15,23,42,0.08)] transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2"
+      className="group relative shrink-0 self-center overflow-visible pr-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2"
       aria-label="Open AI assistant"
     >
-      <img
-        src={AI_AGENT_AVATAR}
-        alt=""
-        className="h-8 w-8 rounded-full object-cover"
-      />
-      <span className="text-xs font-bold tracking-wide" style={{ color: AI_INDIGO }}>AI</span>
+      <span
+        className="pointer-events-none absolute top-1/2 right-[calc(100%+0.75rem)] -translate-y-1/2 text-[11px] font-bold uppercase tracking-[0.16em] whitespace-nowrap opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+        style={{ color: AI_INDIGO }}
+      >
+        AI
+      </span>
+
+      <div className="relative drop-shadow-[-3px_0_12px_rgba(15,23,42,0.12)]">
+        <svg
+          className="ai-notch-glow pointer-events-none absolute inset-0 h-full w-full overflow-visible"
+          viewBox="0 0 36 104"
+          fill="none"
+          aria-hidden
+        >
+          <defs>
+            <linearGradient id={gradientId} x1="0" y1="104" x2="36" y2="0" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stopColor="#6366f1" />
+              <stop offset="50%" stopColor="#2dd4bf" />
+              <stop offset="100%" stopColor="#4338ca" />
+            </linearGradient>
+          </defs>
+          <path
+            d={AI_NOTCH_OUTLINE_PATH}
+            stroke={`url(#${gradientId})`}
+            strokeWidth="1"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="ai-notch-glow-stroke"
+          />
+        </svg>
+
+        <div className="flex flex-col items-end">
+          <div
+            className="h-5 w-5 shrink-0 bg-white transition-colors duration-200 group-hover:bg-slate-50"
+            style={{ clipPath: 'path("M 20 0 L 20 20 L 0 20 Q 20 20 20 0 Z")' }}
+            aria-hidden
+          />
+          <div className="flex h-[4rem] w-9 shrink-0 items-center justify-center rounded-tl-xl rounded-bl-xl bg-white transition-colors duration-200 group-hover:bg-slate-50">
+            <img
+              src={AI_AGENT_AVATAR}
+              alt=""
+              className="h-6 w-6 rounded-full object-cover ring-1 ring-white"
+            />
+          </div>
+          <div
+            className="h-5 w-5 shrink-0 bg-white transition-colors duration-200 group-hover:bg-slate-50"
+            style={{ clipPath: 'path("M 20 20 L 20 0 L 0 0 Q 20 0 20 20 Z")' }}
+            aria-hidden
+          />
+        </div>
+      </div>
     </button>
   );
 }
@@ -3736,15 +4039,44 @@ function ConfigurationAiChatPanel({ onClose, policyName, typeKey, configSection,
 
 /* ---------------- Configuration tab — rule-level variant ---------------- */
 
-function ConfigurationTabRuleLevel({ configuratorVariant = "v2", configSection, setConfigSection, typeKey, setTypeKey, type, setBranches,
+function GlobalAlwaysOnBanner({ isGlobal, setIsGlobal, mandatory = false }) {
+  return (
+    <div className="flex items-start justify-between gap-4 rounded-lg bg-gray-50 px-4 py-3.5">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-foreground">Global (Always-on)</p>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+          Applies at all times across every workflow and context, and can not be disabled by users. 
+        </p>
+      </div>
+      <Switch
+        checked={isGlobal}
+        onCheckedChange={setIsGlobal}
+        disabled={mandatory}
+        aria-label="Global always-on"
+      />
+    </div>
+  );
+}
+
+function PolicyConfigReadOnlyNotice() {
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+      <p className="text-sm font-medium text-amber-950">View only — global policy</p>
+      <p className="mt-1 text-xs leading-relaxed text-amber-900/80">
+        This policy is global and always-on. Its configuration cannot be edited unless you are a platform admin.
+      </p>
+    </div>
+  );
+}
+
+function ConfigurationTabRuleLevel({ configSection, setConfigSection, typeKey, setTypeKey, type, setBranches,
   domain, setDomain, fn, setFn, taxonomy, description, setDescription, personas, policyName = "Untitled Policy",
   applicability, setApplicability,
   scopeBlocks, setScopeBlocks, audiences, parameters = [],
+  scopeOrGate = false, setScopeOrGate,
   branches, addElseIf, removeBranch, updateBranch,
-  priority, setPriority, mandatory, coPolicies }) {
-  const showPerRuleTrigger = configuratorVariant === "v3";
-  const configuratorLabel = configuratorVariant === "v3" ? "V3" : "V2";
-  const controlledActionOptions = getControlledActionOptions(fn);
+  priority, setPriority, mandatory, coPolicies, isGlobal, setIsGlobal, readOnly = false, engine = "hiring", dataSources = DATA_SOURCES, triggers = TRIGGERS }) {
+  const controlledActionOptions = getControlledActionOptionsForEngine(fn, engine);
 
   function changeDomain(nextDomain) {
     const nextFn = taxonomy[nextDomain][0];
@@ -3754,7 +4086,7 @@ function ConfigurationTabRuleLevel({ configuratorVariant = "v2", configSection, 
 
   function changeFn(nextFn) {
     setFn(nextFn);
-    const options = getControlledActionOptions(nextFn);
+    const options = getControlledActionOptionsForEngine(nextFn, engine);
     setBranches((prev) => prev.map((b) => {
       const nextActions = (b.controlledActions || []).filter((action) => options.includes(action));
       return {
@@ -3785,9 +4117,14 @@ function ConfigurationTabRuleLevel({ configuratorVariant = "v2", configSection, 
       </div>
 
       <ConfigurationSectionContent>
+        <FieldHintProvider hintAsTooltip>
         {configSection === "general" && (
-          <SectionCard title="General" subtitle="Type, taxonomy, and description" icon={FileText}>
-            <Field label="Policy type" hint="Determines allowed outcomes in Rules">
+          <SectionCard title="General" subtitle="General settings for the policy" icon={FileText}>
+            {readOnly && <PolicyConfigReadOnlyNotice />}
+            <GlobalAlwaysOnBanner isGlobal={isGlobal} setIsGlobal={setIsGlobal} mandatory={mandatory} />
+
+            <div className={cn("space-y-5", readOnly && "pointer-events-none select-none opacity-60")}>
+            <Field label="Policy type">
               <div className="grid grid-cols-4 gap-2">
                 {POLICY_TYPES.map((t) => {
                   const Icon = t.icon;
@@ -3821,17 +4158,34 @@ function ConfigurationTabRuleLevel({ configuratorVariant = "v2", configSection, 
             </Field>
 
             <PriorityConfigField priority={priority} setPriority={setPriority} mandatory={mandatory} />
+            </div>
           </SectionCard>
         )}
 
         {configSection === "scope" && (
-          <SectionCard title="Scope" subtitle="Audience groups and custom conditions — combined with AND" icon={MapPin}>
-            <ScopeBuilder scopeBlocks={scopeBlocks} setScopeBlocks={setScopeBlocks} audiences={audiences} />
+          <SectionCard
+            title="Scope"
+            subtitle="Audience groups and custom conditions"
+            icon={MapPin}
+          >
+            {readOnly && <PolicyConfigReadOnlyNotice />}
+            <div className={cn(readOnly && "pointer-events-none select-none opacity-60")}>
+            <ScopeBuilder
+              scopeBlocks={scopeBlocks}
+              setScopeBlocks={setScopeBlocks}
+              audiences={audiences}
+              groupOrGate={scopeOrGate}
+              setGroupOrGate={setScopeOrGate}
+              allowGroupOrGate
+            />
+            </div>
           </SectionCard>
         )}
 
         {configSection === "rules" && (
           <SectionCard title="Rules" subtitle={`Conditions and outcomes per branch · ${typeKey}`} icon={GitBranch}>
+            {readOnly && <PolicyConfigReadOnlyNotice />}
+            <div className={cn("space-y-0", readOnly && "pointer-events-none select-none opacity-60")}>
             {branches.map((b, bi) => (
               <div key={b.id}>
                 <div className="overflow-hidden rounded-lg border">
@@ -3841,12 +4195,11 @@ function ConfigurationTabRuleLevel({ configuratorVariant = "v2", configSection, 
                     onRemove={() => removeBranch(b.id)}
                   />
                   <div className="space-y-3.5 p-3.5">
-                    {showPerRuleTrigger && (
-                      <RuleBranchTriggerField
-                        trigger={b.trigger}
-                        onChange={(v) => updateBranch(b.id, { trigger: v })}
-                      />
-                    )}
+                    <RuleBranchTriggerField
+                      trigger={b.trigger}
+                      onChange={(v) => updateBranch(b.id, { trigger: v })}
+                      triggers={triggers}
+                    />
                     {b.kind !== "ELSE" && (
                       <ConditionGroupBuilder
                         groups={b.groups}
@@ -3854,7 +4207,8 @@ function ConfigurationTabRuleLevel({ configuratorVariant = "v2", configSection, 
                         orGate={b.orGate}
                         setOrGate={(v) => updateBranch(b.id, { orGate: v })}
                         parameters={parameters}
-                        allowParameters={showPerRuleTrigger}
+                        allowParameters
+                        dataSources={dataSources}
                       />
                     )}
                     <Field label={`Outcome (${typeKey})`}>
@@ -3890,9 +4244,10 @@ function ConfigurationTabRuleLevel({ configuratorVariant = "v2", configSection, 
                 )}
               </div>
             ))}
-            <Button variant="outline" className="w-full border-dashed" onClick={addElseIf}>
+            <Button variant="outline" className="w-full border-dashed" onClick={addElseIf} disabled={readOnly}>
               <Plus className="h-3.5 w-3.5" /> Add ELSE IF branch
             </Button>
+            </div>
           </SectionCard>
         )}
 
@@ -3901,13 +4256,12 @@ function ConfigurationTabRuleLevel({ configuratorVariant = "v2", configSection, 
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div><span className="mb-1 block text-xs text-muted-foreground">Type</span><Badge variant="outline">{typeKey}</Badge></div>
               <div><span className="mb-1 block text-xs text-muted-foreground">Product</span><span>{domain} <ChevronRight className="inline h-3 w-3 opacity-50" /> {fn}</span></div>
-              <div><span className="mb-1 block text-xs text-muted-foreground">Configurator</span><Badge variant="secondary">{configuratorLabel}</Badge></div>
               <ConflictResolutionSummary priority={priority} mandatory={mandatory} coPolicies={coPolicies} />
               <div><span className="mb-1 block text-xs text-muted-foreground">Personas</span>
                 {personas.length ? <div className="flex flex-wrap gap-1">{personas.map((p) => <Badge key={p} variant="outline">{p}</Badge>)}</div> : <span className="text-xs text-muted-foreground">Not set — derived at outcome level</span>}
               </div>
               <div className="col-span-2"><span className="mb-1 block text-xs text-muted-foreground">Scope</span>
-                <ScopeSummary scopeBlocks={scopeBlocks} applicability={applicability} groupsOnly />
+                <ScopeSummary scopeBlocks={scopeBlocks} applicability={applicability} groupsOnly groupOrGate={scopeOrGate} />
               </div>
             </div>
             <Separator />
@@ -3918,7 +4272,7 @@ function ConfigurationTabRuleLevel({ configuratorVariant = "v2", configSection, 
                   <div key={b.id} className="space-y-1">
                     <div className="flex flex-wrap items-center gap-2 text-xs">
                       <Badge variant={branchVariant(b.kind)}>{b.kind}</Badge>
-                      {showPerRuleTrigger && b.trigger && <Badge variant="outline">{b.trigger}</Badge>}
+                      {b.trigger && <Badge variant="outline">{b.trigger}</Badge>}
                       <ArrowRight className="h-3 w-3 text-muted-foreground" />
                       <OutcomeWithAction outcome={b.outcome} controlledActions={getBranchControlledActions(b)} />
                       {b.requiresApproval && (
@@ -3942,6 +4296,7 @@ function ConfigurationTabRuleLevel({ configuratorVariant = "v2", configSection, 
             </div>
           </SectionCard>
         )}
+        </FieldHintProvider>
       </ConfigurationSectionContent>
     </div>
   );
