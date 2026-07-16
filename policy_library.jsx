@@ -8,6 +8,7 @@ import {
   SkipForward, ListPlus, Shuffle, Repeat, Pause, XCircle, Inbox, UserPlus, Undo2, Hand,
   Home, ChartNetwork, Bot, List, Code, PanelRightClose, MessageSquare, UserCheck, Waypoints,
   ClipboardCheck, TowerControl, SlidersHorizontal, ArrowUp, Info, Calendar, AlertTriangle,
+  GripVertical, Grid2x2Plus,
 } from "lucide-react";
 import {
   cn, Button, Input, Textarea, Label, Card, CardHeader, CardTitle, CardDescription,
@@ -611,6 +612,7 @@ const AUDIENCES_SEED = [
 const POLICY_PRIORITIES = ["High", "Medium", "Low"];
 
 const PRIORITY_DOT_COLORS = {
+  "Always-on": "bg-violet-600",
   Mandatory: "bg-rose-500",
   High: "bg-amber-500",
   Medium: "bg-sky-500",
@@ -2501,7 +2503,9 @@ function NavItem({ item, view, setView, setEditingId, navIconClass }) {
   );
 }
 
-function EngineSwitcher({ engine, setEngine, setView, setEditingId }) {
+function EngineSwitcher({ engine, setEngine, setView, setEditingId, view }) {
+  const moreActive = view === "prioritization";
+
   return (
     <div className="flex rounded-lg border bg-muted/30 p-0.5">
       {Object.values(ENGINES).map((e) => (
@@ -2515,7 +2519,7 @@ function EngineSwitcher({ engine, setEngine, setView, setEditingId }) {
           }}
           className={cn(
             "flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors",
-            engine === e.key
+            engine === e.key && !moreActive
               ? "bg-white text-primary shadow-sm"
               : "text-muted-foreground hover:text-foreground",
           )}
@@ -2523,6 +2527,40 @@ function EngineSwitcher({ engine, setEngine, setView, setEditingId }) {
           {e.label}
         </button>
       ))}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className={cn(
+              "flex shrink-0 items-center justify-center rounded-md px-2 py-1.5 transition-colors",
+              moreActive
+                ? "bg-white text-primary shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+            aria-label="More pages"
+            title="More"
+          >
+            <Grid2x2Plus className="h-3.5 w-3.5" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" side="top" className="w-56">
+          <DropdownMenuLabel className="text-xs">More</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={() => {
+              setView("prioritization");
+              setEditingId(null);
+            }}
+            className="gap-2"
+          >
+            <ListChecks className="h-4 w-4 text-muted-foreground" />
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Prioritization</p>
+              <p className="text-[11px] text-muted-foreground">Workflow-level policy order</p>
+            </div>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
@@ -2562,7 +2600,7 @@ function AppSidebar({ view, setView, setEditingId, engine, setEngine }) {
           ))}
         </nav>
         <div className="border-t px-3 py-3">
-          <EngineSwitcher engine={engine} setEngine={setEngine} setView={setView} setEditingId={setEditingId} />
+          <EngineSwitcher engine={engine} setEngine={setEngine} setView={setView} setEditingId={setEditingId} view={view} />
         </div>
       </div>
     </aside>
@@ -2602,10 +2640,12 @@ export default function PolicyLibraryApp() {
   }
   function newPolicy() { setEditingId("new"); setView("builder"); }
   const inBuilder = view === "builder";
+  const inPrioritization = view === "prioritization";
+  const hideChrome = inBuilder || inPrioritization;
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#f8f8fb] text-foreground">
-      {!inBuilder && (
+      {!hideChrome && (
         <AppSidebar
           view={view}
           setView={setView}
@@ -2672,6 +2712,14 @@ export default function PolicyLibraryApp() {
         {view === "functions" && (
           <FunctionsView taxonomy={activeTaxonomy} setTaxonomy={setActiveTaxonomy} showToast={showToast} />
         )}
+        {view === "prioritization" && (
+          <WorkflowPrioritizationView
+            policies={policies}
+            onBack={() => setView("library")}
+            openBuilder={openBuilder}
+            showToast={showToast}
+          />
+        )}
         {view === "builder" && (
           <BuilderView
             policyId={editingId}
@@ -2698,6 +2746,196 @@ export default function PolicyLibraryApp() {
 }
 
 /* ---------------- Library view ---------------- */
+
+const PRIORITIZATION_BANDS = ["Always-on", "High", "Medium", "Low"];
+
+const PRIORITIZATION_DEMO_WORKFLOW = {
+  id: "wf-prio-demo",
+  name: "Candidate Sourcing Pipeline",
+  type: "Pipeline",
+  stage: "Sourcing",
+  status: "Active",
+};
+
+/** Demo band order — Always-on is fixed; High / Medium / Low can be reordered within-band only. */
+const PRIORITIZATION_DEMO_BANDS_SEED = {
+  "Always-on": ["p18"],
+  High: ["p23", "p2", "p13", "p14", "p8"],
+  Medium: ["p17", "p19", "p21", "p16", "p12", "p10", "p11"],
+  Low: ["p20", "p15", "p9"],
+};
+
+function reorderList(list, fromIndex, toIndex) {
+  if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return list;
+  const next = [...list];
+  const [item] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, item);
+  return next;
+}
+
+function WorkflowPrioritizationView({ policies, onBack, openBuilder, showToast }) {
+  const [bands, setBands] = useState(() => ({
+    "Always-on": [...PRIORITIZATION_DEMO_BANDS_SEED["Always-on"]],
+    High: [...PRIORITIZATION_DEMO_BANDS_SEED.High],
+    Medium: [...PRIORITIZATION_DEMO_BANDS_SEED.Medium],
+    Low: [...PRIORITIZATION_DEMO_BANDS_SEED.Low],
+  }));
+  const [dragState, setDragState] = useState(null); // { band, fromIndex, overIndex }
+
+  function resolvePolicy(id, band) {
+    const base = policies.find((p) => p.id === id);
+    if (!base) return { id, name: id, type: "Guardrail", fn: "—", priority: band === "Always-on" ? undefined : band, global: band === "Always-on", mandatory: band === "Always-on" };
+    if (band === "Always-on") return { ...base, global: true };
+    return { ...base, priority: band, mandatory: false, global: false };
+  }
+
+  function reorderWithinBand(band, fromIndex, toIndex) {
+    if (band === "Always-on" || fromIndex === toIndex) return;
+    setBands((prev) => ({
+      ...prev,
+      [band]: reorderList(prev[band], fromIndex, toIndex),
+    }));
+    showToast(`${band} priority order updated`);
+  }
+
+  const wf = PRIORITIZATION_DEMO_WORKFLOW;
+  const totalPolicies = PRIORITIZATION_BANDS.reduce((n, b) => n + bands[b].length, 0);
+
+  return (
+    <div className="min-h-screen bg-[#f8f8fb]">
+      <div className="sticky top-0 z-20 border-b bg-white/90 px-6 py-4 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-3xl items-center gap-3">
+          <Button variant="outline" size="icon" className="h-8 w-8 shrink-0 bg-white shadow-sm" onClick={onBack} title="Back">
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <div className="min-w-0">
+            <h1 className="text-lg font-semibold tracking-tight">Prioritization (workflow level)</h1>
+          </div>
+        </div>
+      </div>
+
+      <div className="border-b bg-gray-50 px-6 py-4">
+        <div className="mx-auto max-w-3xl">
+          <p className="text-sm font-medium text-foreground">How policy prioritization could work at the workflow level</p>
+          <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+            Policies are attached to a workflow and evaluated together when that workflow runs. Priority bands decide which policy wins when more than one matches:
+            Always-on first, then High, Medium, and Low. Within a band, the higher-listed policy takes precedence.
+            Always-on policies stay pinned at the top; you can only reorder policies inside the same priority band.
+          </p>
+        </div>
+      </div>
+
+      <div className="mx-auto max-w-3xl px-6 py-6">
+        <Card>
+          <CardHeader className="flex-row items-start justify-between gap-3 space-y-0 border-b bg-muted/20 py-4">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-background text-primary shadow-sm">
+                <Workflow className="h-4 w-4" />
+              </div>
+              <div>
+                <CardTitle className="text-base">{wf.name}</CardTitle>
+                <CardDescription className="mt-1 flex flex-wrap items-center gap-2">
+                  <Badge variant="outline">{wf.type}</Badge>
+                  <span>{wf.stage}</span>
+                  <span className="text-muted-foreground">·</span>
+                  <span>{totalPolicies} policies</span>
+                </CardDescription>
+              </div>
+            </div>
+            <StatusDot status={wf.status} />
+          </CardHeader>
+          <CardContent className="space-y-5 p-4">
+            {PRIORITIZATION_BANDS.map((band) => {
+              const ids = bands[band];
+              const locked = band === "Always-on";
+              return (
+                <div key={band}>
+                  <div className="mb-2 flex items-center gap-2">
+                    <PriorityDot priority={band} />
+                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{band}</span>
+                    <span className="text-[11px] text-muted-foreground">({ids.length})</span>
+                    {locked && (
+                      <Badge variant="secondary" className="text-[10px]">Pinned</Badge>
+                    )}
+                  </div>
+                  <ul className="space-y-2">
+                    {ids.map((id, index) => {
+                      const policy = resolvePolicy(id, band);
+                      const isDragging = dragState?.band === band && dragState?.fromIndex === index;
+                      const isDropTarget = !locked && dragState?.band === band && dragState?.overIndex === index && dragState?.fromIndex !== index;
+                      return (
+                        <li
+                          key={id}
+                          draggable={!locked}
+                          onDragStart={locked ? undefined : (e) => {
+                            e.dataTransfer.effectAllowed = "move";
+                            e.dataTransfer.setData("text/plain", `${band}:${index}`);
+                            setDragState({ band, fromIndex: index, overIndex: index });
+                          }}
+                          onDragEnd={() => setDragState(null)}
+                          onDragOver={locked ? undefined : (e) => {
+                            e.preventDefault();
+                            if (dragState?.band !== band) return;
+                            e.dataTransfer.dropEffect = "move";
+                            if (dragState.overIndex !== index) {
+                              setDragState((prev) => (prev ? { ...prev, overIndex: index } : prev));
+                            }
+                          }}
+                          onDrop={locked ? undefined : (e) => {
+                            e.preventDefault();
+                            const raw = e.dataTransfer.getData("text/plain");
+                            const [sourceBand, fromStr] = raw.split(":");
+                            const fromIndex = Number(fromStr);
+                            if (sourceBand !== band || Number.isNaN(fromIndex)) return;
+                            reorderWithinBand(band, fromIndex, index);
+                            setDragState(null);
+                          }}
+                          className={cn(
+                            "flex items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors",
+                            locked
+                              ? "cursor-default border-violet-200 bg-violet-50/60"
+                              : "cursor-grab bg-background active:cursor-grabbing",
+                            isDragging && "opacity-50",
+                            isDropTarget && "border-primary bg-primary/5",
+                          )}
+                        >
+                          {locked ? (
+                            <Shield className="h-4 w-4 shrink-0 text-violet-600" aria-hidden />
+                          ) : (
+                            <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                          )}
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
+                            {index + 1}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <button
+                              type="button"
+                              className="truncate text-left text-sm font-medium hover:text-primary"
+                              onClick={() => openBuilder(policy.id)}
+                            >
+                              {policy.name}
+                            </button>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {policy.type} · {policy.fn}
+                            </p>
+                          </div>
+                          <span className="inline-flex items-center gap-1.5 rounded-lg border bg-background px-2 py-0.5 text-xs font-medium">
+                            <PriorityDot priority={band} className="h-1.5 w-1.5" />
+                            {band}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
 
 function LibraryView({ policies, openBuilder, newPolicy, title = "Policy Library", subtitle }) {
   const [typeFilter, setTypeFilter] = useState("All");
@@ -2799,36 +3037,18 @@ const PEOPLE_DOMAIN_PAGES = {
     description: "Entitlement, accrual, application, approval routing, and carry-forward rules from the Leave & Attendance Policy (India).",
     category: "leave",
     icon: Calendar,
-    highlights: [
-      "24 days annual leave/year, accruing at 2 days/month",
-      "Approval routing by duration: Manager (1–3d), Manager + HR (4–10d), HR approval (>10d)",
-      "Maternity/Paternity auto-approved on documentation",
-      "5-day carry-forward cap; sick/casual leave lapses at year-end",
-    ],
   },
   attendance_rules: {
     title: "Attendance",
     description: "Check-in/out, grace period, regularisation windows, and payroll cycle lock enforcement.",
     category: "attendance",
     icon: Clock,
-    highlights: [
-      "15-minute late arrival grace period",
-      "Regularisation within 3 working days of discrepancy",
-      "Monthly payroll cycle (26th–25th) with cycle lock",
-      "Incomplete check-in/out triggers soft stop",
-    ],
   },
   absenteeism: {
     title: "Absenteeism",
     description: "Pattern detection and escalation thresholds for unauthorised or repeated absence.",
     category: "absenteeism",
     icon: AlertTriangle,
-    highlights: [
-      "Monday/Friday pattern × 3 → manager discussion + HR flag",
-      "3 instances in 3 months → informal review",
-      "10%+ rolling 12-month rate → formal HR review",
-      "3+ consecutive unexplained days → Manager + HR formal review",
-    ],
   },
 };
 
@@ -2852,44 +3072,26 @@ function DomainPolicyView({ pageKey, policies, parameters, openBuilder }) {
         <p className="max-w-3xl text-sm text-muted-foreground">{page.description}</p>
       </div>
 
-      <div className="mb-6 grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Policy highlights</CardTitle>
-            <CardDescription>Key rules from Leave_Attendance_Policy.docx.pdf</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-2 text-sm text-muted-foreground">
-              {page.highlights.map((h) => (
-                <li key={h} className="flex gap-2">
-                  <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-                  <span>{h}</span>
-                </li>
+      <Card className="mb-6">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Parameters</CardTitle>
+          <CardDescription>Configurable thresholds for this domain</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {relatedParams.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No domain-specific parameters configured.</p>
+          ) : (
+            <div className="space-y-2">
+              {relatedParams.map((p) => (
+                <div key={p.id} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
+                  <span className="font-medium">{p.label}</span>
+                  <Badge variant="secondary">{p.value}{p.unit ? ` ${p.unit}` : ""}</Badge>
+                </div>
               ))}
-            </ul>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Parameters</CardTitle>
-            <CardDescription>Configurable thresholds for this domain</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {relatedParams.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No domain-specific parameters configured.</p>
-            ) : (
-              <div className="space-y-2">
-                {relatedParams.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
-                    <span className="font-medium">{p.label}</span>
-                    <Badge variant="secondary">{p.value}{p.unit ? ` ${p.unit}` : ""}</Badge>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card className="overflow-hidden">
         <CardHeader className="border-b bg-muted/20 py-3">
