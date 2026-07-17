@@ -150,19 +150,77 @@ const PEOPLE_POLICY_SOURCE = {
   LEAVE_ATTENDANCE: "Leave_Attendance_Policy.docx.pdf",
 };
 
+const PEOPLE_PARAMETER_GROUPS_SEED = [
+  {
+    id: "pg-leave",
+    name: "Leave Management",
+    description: "Entitlement, accrual, carry-forward, and application thresholds",
+    icon: "Calendar",
+  },
+  {
+    id: "pg-attendance",
+    name: "Attendance",
+    description: "Grace period, regularisation, and check-in thresholds",
+    icon: "Clock",
+  },
+  {
+    id: "pg-absenteeism",
+    name: "Absenteeism",
+    description: "Pattern detection and escalation thresholds",
+    icon: "AlertTriangle",
+  },
+];
+
+const HIRING_PARAMETER_GROUPS_SEED = [
+  {
+    id: "hg-sourcing",
+    name: "Sourcing Windows",
+    description: "Cool-off and recency windows for outreach and re-contact",
+    icon: "Clock",
+  },
+  {
+    id: "hg-nopoach",
+    name: "No-Poach",
+    description: "Protected-client cooling-off and restriction windows",
+    icon: "Shield",
+  },
+  {
+    id: "hg-rehire",
+    name: "Rehire Screening",
+    description: "Departure soft-stop and monitor band thresholds",
+    icon: "RefreshCw",
+  },
+  {
+    id: "hg-interview",
+    name: "Interview Intelligence",
+    description: "Computed fraud signals and interview screening thresholds",
+    icon: "Eye",
+  },
+];
+
+const PARAMETER_GROUP_ICONS = {
+  Calendar,
+  Clock,
+  AlertTriangle,
+  SlidersHorizontal,
+  Shield,
+  RefreshCw,
+  Eye,
+};
+
 const PEOPLE_PARAMETERS_SEED = [
-  { id: "ppe-1", key: "annualLeaveEntitlement", label: "Annual leave entitlement", value: "24", unit: "days/year", scope: "India · All employees", description: "Total annual leave days per leave year.", usedBy: ["Leave Application Gate", "Carry-Forward Cap"] },
-  { id: "ppe-2", key: "monthlyAccrualRate", label: "Monthly accrual rate", value: "2", unit: "days/month", scope: "India · Full-time", description: "Annual leave accrues monthly from date of joining.", usedBy: ["Leave Application Gate"] },
-  { id: "ppe-3", key: "carryForwardCap", label: "Carry-forward cap", value: "5", unit: "days", scope: "India · Annual leave", description: "Maximum unused annual leave carried to next leave year.", usedBy: ["Carry-Forward Cap"] },
-  { id: "ppe-4", key: "encashmentMaxDays", label: "Encashment maximum", value: "10", unit: "days", scope: "India · On separation", description: "Max accrued annual leave encashed upon separation.", usedBy: ["Leave Encashment Gate"] },
-  { id: "ppe-5", key: "gracePeriodMinutes", label: "Late arrival grace period", value: "15", unit: "minutes", scope: "India · All sites", description: "Window after scheduled start time before lateness is penalised.", usedBy: ["Late Arrival Grace"] },
-  { id: "ppe-6", key: "regularisationWindowDays", label: "Regularisation window", value: "3", unit: "working days", scope: "India · All employees", description: "Days after discrepancy within which regularisation is accepted.", usedBy: ["Attendance Regularisation Gate"] },
-  { id: "ppe-7", key: "shortTermAbsenceThreshold", label: "Short-term absence threshold", value: "3", unit: "instances", scope: "India · Rolling 3 months", description: "Repeated short-term absences triggering informal review.", usedBy: ["Absenteeism Pattern Block"] },
-  { id: "ppe-8", key: "rollingAbsenceRatePct", label: "Rolling absence rate threshold", value: "10", unit: "%", scope: "India · Rolling 12 months", description: "Absence rate above which formal HR review is triggered.", usedBy: ["Absenteeism Pattern Block"] },
-  { id: "ppe-9", key: "consecutiveAbsenceThreshold", label: "Consecutive absence threshold", value: "3", unit: "days", scope: "India · Unexplained", description: "Consecutive unexplained absences triggering formal review.", usedBy: ["Consecutive Absence Review"] },
-  { id: "ppe-10", key: "probationLeaveLimit", label: "Probation leave limit", value: "1", unit: "leave/month", scope: "India · Probationary", description: "Max leaves per month during prohibition period.", usedBy: ["Probation Leave Restriction"] },
-  { id: "ppe-11", key: "advanceNoticeDays", label: "Planned leave advance notice", value: "5", unit: "working days", scope: "India · Annual leave", description: "Minimum advance notice for planned leave applications.", usedBy: ["Leave Application Gate"] },
-  { id: "ppe-12", key: "sickLeaveCertDays", label: "Sick leave certificate threshold", value: "2", unit: "consecutive days", scope: "India · Sick leave", description: "Medical certificate required for sick leave exceeding this duration.", usedBy: ["Sick Leave Documentation"] },
+  { id: "ppe-1", groupId: "pg-leave", key: "annualLeaveEntitlement", label: "Annual leave entitlement", value: "24", unit: "days/year", scope: "India · All employees", description: "Total annual leave days per leave year.", usedBy: ["Leave Application Gate", "Carry-Forward Cap"] },
+  { id: "ppe-2", groupId: "pg-leave", key: "monthlyAccrualRate", label: "Monthly accrual rate", value: "2", unit: "days/month", scope: "India · Full-time", description: "Annual leave accrues monthly from date of joining.", usedBy: ["Leave Application Gate"] },
+  { id: "ppe-3", groupId: "pg-leave", key: "carryForwardCap", label: "Carry-forward cap", value: "5", unit: "days", scope: "India · Annual leave", description: "Maximum unused annual leave carried to next leave year.", usedBy: ["Carry-Forward Cap"] },
+  { id: "ppe-4", groupId: "pg-leave", key: "encashmentMaxDays", label: "Encashment maximum", value: "10", unit: "days", scope: "India · On separation", description: "Max accrued annual leave encashed upon separation.", usedBy: ["Leave Encashment Gate"] },
+  { id: "ppe-10", groupId: "pg-leave", key: "probationLeaveLimit", label: "Probation leave limit", value: "1", unit: "leave/month", scope: "India · Probationary", description: "Max leaves per month during prohibition period.", usedBy: ["Probation Leave Restriction"] },
+  { id: "ppe-11", groupId: "pg-leave", key: "advanceNoticeDays", label: "Planned leave advance notice", value: "5", unit: "working days", scope: "India · Annual leave", description: "Minimum advance notice for planned leave applications.", usedBy: ["Leave Application Gate"] },
+  { id: "ppe-12", groupId: "pg-leave", key: "sickLeaveCertDays", label: "Sick leave certificate threshold", value: "2", unit: "consecutive days", scope: "India · Sick leave", description: "Medical certificate required for sick leave exceeding this duration.", usedBy: ["Sick Leave Documentation"] },
+  { id: "ppe-5", groupId: "pg-attendance", key: "gracePeriodMinutes", label: "Late arrival grace period", value: "15", unit: "minutes", scope: "India · All sites", description: "Window after scheduled start time before lateness is penalised.", usedBy: ["Late Arrival Grace"] },
+  { id: "ppe-6", groupId: "pg-attendance", key: "regularisationWindowDays", label: "Regularisation window", value: "3", unit: "working days", scope: "India · All employees", description: "Days after discrepancy within which regularisation is accepted.", usedBy: ["Attendance Regularisation Gate"] },
+  { id: "ppe-7", groupId: "pg-absenteeism", key: "shortTermAbsenceThreshold", label: "Short-term absence threshold", value: "3", unit: "instances", scope: "India · Rolling 3 months", description: "Repeated short-term absences triggering informal review.", usedBy: ["Absenteeism Pattern Block"] },
+  { id: "ppe-8", groupId: "pg-absenteeism", key: "rollingAbsenceRatePct", label: "Rolling absence rate threshold", value: "10", unit: "%", scope: "India · Rolling 12 months", description: "Absence rate above which formal HR review is triggered.", usedBy: ["Absenteeism Pattern Block"] },
+  { id: "ppe-9", groupId: "pg-absenteeism", key: "consecutiveAbsenceThreshold", label: "Consecutive absence threshold", value: "3", unit: "days", scope: "India · Unexplained", description: "Consecutive unexplained absences triggering formal review.", usedBy: ["Consecutive Absence Review"] },
 ];
 
 const PEOPLE_AUDIENCES_SEED = [
@@ -429,6 +487,7 @@ const MANAGED_LISTS = [
 const PARAMETERS_SEED = [
   {
     id: "par-1",
+    groupId: "hg-sourcing",
     key: "interviewCoolOffDays",
     label: "Interview cool-off window",
     value: "180",
@@ -439,6 +498,7 @@ const PARAMETERS_SEED = [
   },
   {
     id: "par-2",
+    groupId: "hg-sourcing",
     key: "applicantRecencyDays",
     label: "Past applicant recency window",
     value: "90",
@@ -449,6 +509,7 @@ const PARAMETERS_SEED = [
   },
   {
     id: "par-6",
+    groupId: "hg-nopoach",
     key: "tier2CoolOffDays",
     label: "No-Poach Tier 2 cooling-off window",
     value: "180",
@@ -459,6 +520,7 @@ const PARAMETERS_SEED = [
   },
   {
     id: "par-3",
+    groupId: "hg-rehire",
     key: "rehireDepartureSoftStopDays",
     label: "Rehire departure soft-stop window",
     value: "180",
@@ -469,6 +531,7 @@ const PARAMETERS_SEED = [
   },
   {
     id: "par-4",
+    groupId: "hg-rehire",
     key: "rehireDepartureMonitorMinDays",
     label: "Rehire monitor window (min)",
     value: "365",
@@ -479,6 +542,7 @@ const PARAMETERS_SEED = [
   },
   {
     id: "par-5",
+    groupId: "hg-rehire",
     key: "rehireDepartureMonitorMaxDays",
     label: "Rehire monitor window (max)",
     value: "1095",
@@ -489,6 +553,7 @@ const PARAMETERS_SEED = [
   },
   {
     id: "par-7",
+    groupId: "hg-interview",
     key: "interviewFraud",
     label: "Interview fraud signal",
     type: "computed",
@@ -2433,9 +2498,6 @@ const HIRING_NAV_SECONDARY = [
 
 const PEOPLE_NAV_PRIMARY = [
   { id: "library", label: "Policies", icon: Shield },
-  { id: "leave_rules", label: "Leave Management", icon: Calendar },
-  { id: "attendance_rules", label: "Attendance", icon: Clock },
-  { id: "absenteeism", label: "Absenteeism", icon: AlertTriangle },
   { id: "audiences", label: "Audiences", icon: Users },
 ];
 
@@ -2631,6 +2693,8 @@ export default function PolicyLibraryApp() {
   const [peoplePolicies, setPeoplePolicies] = useState(PEOPLE_POLICIES_SEED);
   const [peopleAudiences, setPeopleAudiences] = useState(PEOPLE_AUDIENCES_SEED);
   const [peopleTaxonomy, setPeopleTaxonomy] = useState(PEOPLE_TAXONOMY_SEED);
+  const [peopleParameterGroups, setPeopleParameterGroups] = useState(PEOPLE_PARAMETER_GROUPS_SEED);
+  const [parameterGroups, setParameterGroups] = useState(HIRING_PARAMETER_GROUPS_SEED);
   const [editingId, setEditingId] = useState(null);
   const [toast, setToast] = useState("");
   const [builderIsAdmin, setBuilderIsAdmin] = useState(true);
@@ -2688,15 +2752,6 @@ export default function PolicyLibraryApp() {
             subtitle={isPeople ? `${activePolicies.length} policies · Leave & Attendance (India)` : undefined}
           />
         )}
-        {view === "leave_rules" && isPeople && (
-          <DomainPolicyView pageKey="leave_rules" policies={activePolicies} parameters={activeParameters} openBuilder={openBuilder} />
-        )}
-        {view === "attendance_rules" && isPeople && (
-          <DomainPolicyView pageKey="attendance_rules" policies={activePolicies} parameters={activeParameters} openBuilder={openBuilder} />
-        )}
-        {view === "absenteeism" && isPeople && (
-          <DomainPolicyView pageKey="absenteeism" policies={activePolicies} parameters={activeParameters} openBuilder={openBuilder} />
-        )}
         {view === "audiences" && (
           <AudiencesView
             audiences={activeAudiences}
@@ -2728,7 +2783,27 @@ export default function PolicyLibraryApp() {
         )}
         {view === "lists" && !isPeople && <ListsView />}
         {view === "parameters" && (
-          <ParametersView parameters={activeParameters} setParameters={setActiveParameters} showToast={showToast} />
+          <GroupedParametersView
+            groups={isPeople ? peopleParameterGroups : parameterGroups}
+            setGroups={isPeople ? setPeopleParameterGroups : setParameterGroups}
+            parameters={activeParameters}
+            setParameters={setActiveParameters}
+            showToast={showToast}
+            dataSources={activeDataSources}
+            subtitle={isPeople ? (
+              <>
+                Grouped thresholds referenced in People policies as{" "}
+                <code className="rounded bg-muted px-1 py-0.5 text-xs">@parameterKey</code>.
+                Click a parameter to expand and configure it.
+              </>
+            ) : (
+              <>
+                Tenant-scoped values referenced in V3 rule conditions as{" "}
+                <code className="rounded bg-muted px-1 py-0.5 text-xs">@parameterKey</code>.
+                Click a parameter to expand and configure it.
+              </>
+            )}
+          />
         )}
         {view === "types" && <TypesView />}
         {view === "functions" && (
@@ -3138,99 +3213,6 @@ function LibraryView({ policies, openBuilder, newPolicy, title = "Policy Library
   );
 }
 
-const PEOPLE_DOMAIN_PAGES = {
-  leave_rules: {
-    title: "Leave Management",
-    description: "Entitlement, accrual, application, approval routing, and carry-forward rules from the Leave & Attendance Policy (India).",
-    category: "leave",
-    icon: Calendar,
-  },
-  attendance_rules: {
-    title: "Attendance",
-    description: "Check-in/out, grace period, regularisation windows, and payroll cycle lock enforcement.",
-    category: "attendance",
-    icon: Clock,
-  },
-  absenteeism: {
-    title: "Absenteeism",
-    description: "Pattern detection and escalation thresholds for unauthorised or repeated absence.",
-    category: "absenteeism",
-    icon: AlertTriangle,
-  },
-};
-
-function DomainPolicyView({ pageKey, policies, parameters, openBuilder }) {
-  const page = PEOPLE_DOMAIN_PAGES[pageKey];
-  const Icon = page.icon;
-  const domainPolicies = policies.filter((p) => p.category === page.category);
-  const relatedParams = parameters.filter((p) =>
-    p.usedBy?.some((u) => domainPolicies.some((pol) => pol.name === u))
-  );
-
-  return (
-    <div className="mx-auto max-w-7xl px-6 py-6">
-      <div className="mb-6">
-        <div className="mb-2 flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
-            <Icon className="h-4 w-4 text-primary" />
-          </div>
-          <h1 className="text-2xl font-semibold tracking-tight">{page.title}</h1>
-        </div>
-        <p className="max-w-3xl text-sm text-muted-foreground">{page.description}</p>
-      </div>
-
-      <Card className="mb-6">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Parameters</CardTitle>
-          <CardDescription>Configurable thresholds for this domain</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {relatedParams.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No domain-specific parameters configured.</p>
-          ) : (
-            <div className="space-y-2">
-              {relatedParams.map((p) => (
-                <div key={p.id} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
-                  <span className="font-medium">{p.label}</span>
-                  <Badge variant="secondary">{p.value}{p.unit ? ` ${p.unit}` : ""}</Badge>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card className="overflow-hidden">
-        <CardHeader className="border-b bg-muted/20 py-3">
-          <CardTitle className="text-base">{domainPolicies.length} policies in this domain</CardTitle>
-        </CardHeader>
-        <Table>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent">
-              <TableHead>Name</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Trigger</TableHead>
-              <TableHead>Priority</TableHead>
-              <TableHead>Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {domainPolicies.map((p) => (
-              <TableRow key={p.id} onClick={() => openBuilder(p.id)} className="cursor-pointer">
-                <TableCell className="font-medium">{p.name}</TableCell>
-                <TableCell><Badge variant="outline">{p.type}</Badge></TableCell>
-                <TableCell className="text-xs text-muted-foreground">{getPolicyTriggerLabel(p)}</TableCell>
-                <TableCell><PriorityBadge policy={p} /></TableCell>
-                <TableCell><StatusDot status={p.status} /></TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
-    </div>
-  );
-}
-
 /* ---------------- Audiences view ---------------- */
 
 function AudiencesView({ audiences, setAudiences, showToast, dataSources = DATA_SOURCES }) {
@@ -3321,12 +3303,27 @@ function PlaceholderView({ title, description, icon: Icon }) {
 
 /* ---------------- Managed Lists registry view ---------------- */
 
-function ParametersView({ parameters, setParameters, showToast }) {
+function GroupedParametersView({
+  groups,
+  setGroups,
+  parameters,
+  setParameters,
+  showToast,
+  dataSources = DATA_SOURCES,
+  subtitle = (
+    <>
+      Grouped thresholds referenced in policies as{" "}
+      <code className="rounded bg-muted px-1 py-0.5 text-xs">@parameterKey</code>.
+      Click a parameter to expand and configure it.
+    </>
+  ),
+}) {
+  const [newGroupName, setNewGroupName] = useState("");
+  const [addingGroup, setAddingGroup] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
 
   function updateParameter(id, patch) {
-    setParameters(parameters.map((param) => param.id === id ? { ...param, ...patch } : param));
-    showToast?.("Parameter updated");
+    setParameters(parameters.map((param) => (param.id === id ? { ...param, ...patch } : param)));
   }
 
   function setParameterType(id, nextType) {
@@ -3351,15 +3348,16 @@ function ParametersView({ parameters, setParameters, showToast }) {
     }
   }
 
-  function addParameter() {
+  function addParameter(groupId) {
     const next = {
       id: `par-${uid++}`,
+      groupId,
       key: `param${uid}`,
       label: "New parameter",
       type: "static",
       value: "0",
       unit: "days",
-      scope: "Tenant · Job family · Location",
+      scope: "",
       description: "",
       usedBy: [],
     };
@@ -3368,193 +3366,225 @@ function ParametersView({ parameters, setParameters, showToast }) {
     showToast?.("Parameter added");
   }
 
+  function removeParameter(id) {
+    setParameters(parameters.filter((p) => p.id !== id));
+    if (expandedId === id) setExpandedId(null);
+    showToast?.("Parameter removed");
+  }
+
+  function addGroup() {
+    if (!newGroupName.trim()) return;
+    const next = {
+      id: `pg-${uid++}`,
+      name: newGroupName.trim(),
+      description: "Custom parameter group",
+      icon: "SlidersHorizontal",
+    };
+    setGroups([...groups, next]);
+    setNewGroupName("");
+    setAddingGroup(false);
+    showToast?.("Group added");
+  }
+
+  function removeGroup(groupId) {
+    setGroups(groups.filter((g) => g.id !== groupId));
+    setParameters(parameters.filter((p) => p.groupId !== groupId));
+    showToast?.("Group removed");
+  }
+
   return (
     <div className="mx-auto max-w-5xl px-6 py-6">
-      <h1 className="mb-1 text-2xl font-semibold tracking-tight">Parameters</h1>
-      <p className="mb-5 text-sm text-muted-foreground">
-        Tenant-scoped values referenced in V3 rule conditions as{" "}
-        <code className="rounded bg-muted px-1 py-0.5 text-xs">@parameterKey</code>.
-        Static parameters hold defaults; computed parameters resolve dynamically from other properties.
-      </p>
+      <div className="mb-5 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Parameters</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
+        </div>
+        <Button variant="outline" onClick={() => setAddingGroup(true)}>
+          <Plus className="h-4 w-4" /> Add group
+        </Button>
+      </div>
 
-      <Card className="overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent">
-              <TableHead className="w-8" />
-              <TableHead>Parameter</TableHead>
-              <TableHead>Key</TableHead>
-              <TableHead>Default</TableHead>
-              <TableHead>Scope</TableHead>
-              <TableHead className="text-right">Used by</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {parameters.map((param) => {
-              const computed = isComputedParameter(param);
-              const expanded = expandedId === param.id;
-              const computeClauses = getComputedParameterClauses(param);
-              return (
-                <Fragment key={param.id}>
-                  <TableRow className={cn(expanded && "border-b-0")}>
-                    <TableCell className="px-2">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-muted-foreground"
-                        onClick={() => setExpandedId(expanded ? null : param.id)}
-                        aria-label={expanded ? "Collapse parameter" : "Expand parameter"}
-                      >
-                        <ChevronDown className={cn("h-4 w-4 transition-transform", expanded && "rotate-180")} />
-                      </Button>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <div className="font-medium">{param.label}</div>
-                        <Badge variant={computed ? "default" : "outline"} className="text-[10px]">
-                          {computed ? "Computed" : "Static"}
-                        </Badge>
-                      </div>
-                      <div className="mt-0.5 max-w-md text-xs text-muted-foreground">{param.description}</div>
-                      {computed && computeClauses.length > 0 && (
-                        <div className="mt-2 flex flex-wrap items-center gap-1">
-                          {computeClauses.map((clause, index) => (
-                            <Fragment key={`${param.id}-clause-${index}`}>
-                              {index > 0 && (
-                                <span className="text-[10px] font-semibold uppercase text-muted-foreground">
-                                  {param.compute?.orGate ? "or" : "and"}
-                                </span>
-                              )}
-                              <Badge variant="outline" className="font-normal">{clause}</Badge>
-                            </Fragment>
-                          ))}
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="font-mono text-[11px]">{param.key}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      {computed ? (
-                        <Badge variant="secondary" className="font-normal">Dynamic · boolean</Badge>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <Input
-                            value={param.value}
-                            onChange={(e) => updateParameter(param.id, { value: e.target.value })}
-                            className="h-8 w-24 bg-white text-xs"
-                          />
-                          {param.unit && <span className="text-xs text-muted-foreground">{param.unit}</span>}
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{param.scope}</TableCell>
-                    <TableCell className="text-right">
-                      <div className="group/usedby relative inline-flex justify-end">
-                        <span className="cursor-default rounded px-1.5 py-0.5 text-sm tabular-nums text-muted-foreground hover:bg-muted">
-                          {param.usedBy.length}
-                        </span>
-                        {param.usedBy.length > 0 && (
-                          <div className="pointer-events-none absolute right-0 top-full z-50 mt-1 hidden min-w-[12rem] rounded-md border bg-popover px-2.5 py-2 text-left shadow-md group-hover/usedby:block">
-                            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Used by</p>
-                            <div className="space-y-1">
-                              {param.usedBy.map((name) => (
-                                <div key={name} className="text-xs text-foreground">{name}</div>
-                              ))}
+      {addingGroup && (
+        <Card className="mb-4 border-primary/30">
+          <CardContent className="flex flex-wrap items-end gap-3 p-4">
+            <div className="min-w-[16rem] flex-1 space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Group name</Label>
+              <Input
+                value={newGroupName}
+                onChange={(e) => setNewGroupName(e.target.value)}
+                placeholder="e.g. Screening Thresholds"
+                onKeyDown={(e) => { if (e.key === "Enter") addGroup(); }}
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button variant="ghost" onClick={() => { setAddingGroup(false); setNewGroupName(""); }}>Cancel</Button>
+              <Button onClick={addGroup} disabled={!newGroupName.trim()}>
+                <Save className="h-3.5 w-3.5" /> Save group
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="space-y-4">
+        {groups.map((group) => {
+          const Icon = PARAMETER_GROUP_ICONS[group.icon] || SlidersHorizontal;
+          const groupParams = parameters.filter((p) => p.groupId === group.id);
+          return (
+            <Card key={group.id}>
+              <CardHeader className="flex-row items-start justify-between gap-3 space-y-0 border-b bg-muted/20 py-4">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                    <Icon className="h-4 w-4 text-primary" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base">{group.name}</CardTitle>
+                    <CardDescription>{group.description}</CardDescription>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                  onClick={() => removeGroup(group.id)}
+                  title="Remove group"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </CardHeader>
+              <CardContent className="space-y-2 p-4">
+                {groupParams.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No parameters in this group yet.</p>
+                ) : (
+                  groupParams.map((p) => {
+                    const computed = isComputedParameter(p);
+                    const expanded = expandedId === p.id;
+                    return (
+                      <div key={p.id} className={cn("overflow-hidden rounded-lg border", expanded && "border-primary/20")}>
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm transition-colors hover:bg-muted/40"
+                          onClick={() => setExpandedId(expanded ? null : p.id)}
+                        >
+                          <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", expanded && "rotate-180")} />
+                          <span className="min-w-0 flex-1 font-medium">{p.label}</span>
+                          <Badge variant={computed ? "default" : "outline"} className="shrink-0 text-[10px]">
+                            {computed ? "Computed" : "Static"}
+                          </Badge>
+                          {computed ? (
+                            <Badge variant="secondary" className="shrink-0 font-normal">Dynamic</Badge>
+                          ) : (
+                            <Badge variant="secondary" className="shrink-0">
+                              {p.value}{p.unit ? ` ${p.unit}` : ""}
+                            </Badge>
+                          )}
+                        </button>
+                        {expanded && (
+                          <div className="space-y-4 border-t bg-muted/10 p-4">
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <Field label="Label">
+                                <Input
+                                  value={p.label}
+                                  onChange={(e) => updateParameter(p.id, { label: e.target.value })}
+                                  className="bg-white"
+                                />
+                              </Field>
+                              <Field label="Key">
+                                <Input
+                                  value={p.key}
+                                  onChange={(e) => updateParameter(p.id, { key: e.target.value.replace(/\s+/g, "") })}
+                                  className="bg-white font-mono text-sm"
+                                />
+                              </Field>
+                            </div>
+                            <Field label="Description">
+                              <Textarea
+                                value={p.description || ""}
+                                onChange={(e) => updateParameter(p.id, { description: e.target.value })}
+                                rows={2}
+                                className="bg-white"
+                              />
+                            </Field>
+                            <Field label="Scope">
+                              <Input
+                                value={p.scope || ""}
+                                onChange={(e) => updateParameter(p.id, { scope: e.target.value })}
+                                className="bg-white"
+                                placeholder="e.g. Tenant · Job family · Location"
+                              />
+                            </Field>
+                            <Field label="Value type">
+                              <SimpleSelect
+                                whiteBg
+                                value={computed ? "computed" : "static"}
+                                onChange={(value) => setParameterType(p.id, value)}
+                                options={["static", "computed"]}
+                                labels={{ static: "Static default", computed: "Computed from properties" }}
+                              />
+                            </Field>
+                            {computed ? (
+                              <Field
+                                label="Compute when"
+                                hint="Parameter resolves to true when these conditions match (evaluated at runtime)."
+                              >
+                                <ConditionGroupBuilder
+                                  groups={p.compute?.groups || createBlankComputeGroups()}
+                                  setGroups={(nextGroups) => updateParameter(p.id, {
+                                    compute: { ...(p.compute || { orGate: false }), groups: nextGroups },
+                                  })}
+                                  orGate={!!p.compute?.orGate}
+                                  setOrGate={(orGate) => updateParameter(p.id, {
+                                    compute: { ...(p.compute || { groups: createBlankComputeGroups() }), orGate },
+                                  })}
+                                  singleGroup
+                                  dataSources={dataSources}
+                                />
+                              </Field>
+                            ) : (
+                              <div className="grid gap-3 sm:grid-cols-[1fr_8rem]">
+                                <Field label="Default value">
+                                  <Input
+                                    value={p.value}
+                                    onChange={(e) => updateParameter(p.id, { value: e.target.value })}
+                                    className="bg-white"
+                                  />
+                                </Field>
+                                <Field label="Unit">
+                                  <Input
+                                    value={p.unit || ""}
+                                    onChange={(e) => updateParameter(p.id, { unit: e.target.value })}
+                                    className="bg-white"
+                                    placeholder="days"
+                                  />
+                                </Field>
+                              </div>
+                            )}
+                            <div className="flex justify-end">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive hover:text-destructive"
+                                onClick={() => removeParameter(p.id)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" /> Remove parameter
+                              </Button>
                             </div>
                           </div>
                         )}
                       </div>
-                    </TableCell>
-                  </TableRow>
-                  {expanded && (
-                    <TableRow className="bg-muted/10 hover:bg-muted/10">
-                      <TableCell colSpan={6} className="p-4">
-                        <div className="space-y-4">
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <Field label="Label">
-                              <Input
-                                value={param.label}
-                                onChange={(e) => updateParameter(param.id, { label: e.target.value })}
-                                className="bg-white"
-                              />
-                            </Field>
-                            <Field label="Key">
-                              <Input
-                                value={param.key}
-                                onChange={(e) => updateParameter(param.id, { key: e.target.value.replace(/\s+/g, "") })}
-                                className="bg-white font-mono text-sm"
-                              />
-                            </Field>
-                          </div>
-                          <Field label="Description">
-                            <Textarea
-                              value={param.description}
-                              onChange={(e) => updateParameter(param.id, { description: e.target.value })}
-                              rows={2}
-                              className="bg-white"
-                            />
-                          </Field>
-                          <Field label="Value type">
-                            <SimpleSelect
-                              whiteBg
-                              value={computed ? "computed" : "static"}
-                              onChange={(value) => setParameterType(param.id, value)}
-                              options={["static", "computed"]}
-                              labels={{ static: "Static default", computed: "Computed from properties" }}
-                            />
-                          </Field>
-                          {computed ? (
-                            <Field
-                              label="Compute when"
-                              hint="Parameter resolves to true when these conditions match (evaluated at runtime)."
-                            >
-                              <ConditionGroupBuilder
-                                groups={param.compute?.groups || createBlankComputeGroups()}
-                                setGroups={(groups) => updateParameter(param.id, {
-                                  compute: { ...(param.compute || { orGate: false }), groups },
-                                })}
-                                orGate={!!param.compute?.orGate}
-                                setOrGate={(orGate) => updateParameter(param.id, {
-                                  compute: { ...(param.compute || { groups: createBlankComputeGroups() }), orGate },
-                                })}
-                                singleGroup
-                              />
-                            </Field>
-                          ) : (
-                            <div className="grid gap-3 sm:grid-cols-[1fr_8rem]">
-                              <Field label="Default value">
-                                <Input
-                                  value={param.value}
-                                  onChange={(e) => updateParameter(param.id, { value: e.target.value })}
-                                  className="bg-white"
-                                />
-                              </Field>
-                              <Field label="Unit">
-                                <Input
-                                  value={param.unit || ""}
-                                  onChange={(e) => updateParameter(param.id, { unit: e.target.value })}
-                                  className="bg-white"
-                                  placeholder="days"
-                                />
-                              </Field>
-                            </div>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </Fragment>
-              );
-            })}
-          </TableBody>
-        </Table>
-      </Card>
-
-      <Button variant="outline" className="mt-3.5 w-full border-dashed" onClick={addParameter}>
-        <Plus className="h-3.5 w-3.5" /> Add parameter
-      </Button>
+                    );
+                  })
+                )}
+                <Button type="button" variant="link" size="sm" className="h-auto px-0 text-xs" onClick={() => addParameter(group.id)}>
+                  <Plus className="h-3.5 w-3.5" /> Add parameter
+                </Button>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -3745,7 +3775,10 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, par
   const existing = policies.find((p) => p.id === policyId);
   const engineTriggers = getEngineTriggers(engine);
   const engineDataSources = getEngineDataSources(engine);
-  const [activeTab, setActiveTab] = useState("context");
+  const [activeTab, setActiveTab] = useState(() => {
+    const global = existing?.global ?? !!existing?.mandatory;
+    return global && !isAdmin ? "configuration" : "context";
+  });
   const [configSection, setConfigSection] = useState("general");
   const [name, setName] = useState(existing?.name || "Untitled Policy");
   const [status, setStatus] = useState(existing?.status || "Draft");
@@ -3795,6 +3828,15 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, par
   const linkedWorkflows = getWorkflowsForEngine(engine).filter((w) => w.policies.includes(existing?.id));
   const coPolicies = getCoPoliciesOnWorkflowsForEngine(existing?.id, policies, engine);
   const configReadOnly = isGlobal && !isAdmin;
+  const builderTabs = configReadOnly
+    ? BUILDER_TABS.filter((tab) => tab.id !== "context")
+    : BUILDER_TABS;
+
+  useEffect(() => {
+    if (configReadOnly && activeTab === "context") {
+      setActiveTab("configuration");
+    }
+  }, [configReadOnly, activeTab]);
 
   function addElseIf() {
     const insertAt = branches.length - 1;
@@ -3871,7 +3913,7 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, par
           <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
             <Tabs value={activeTab} onValueChange={setActiveTab}>
               <TabsList>
-                {BUILDER_TABS.map((tab) => {
+                {builderTabs.map((tab) => {
                   const Icon = tab.icon;
                   return (
                     <TabsTrigger key={tab.id} value={tab.id}>
@@ -3919,7 +3961,7 @@ function BuilderView({ policyId, policies, setPolicies, audiences, taxonomy, par
 
       <div className="flex min-h-0 flex-1 items-stretch overflow-visible">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        {activeTab === "context" && (
+        {activeTab === "context" && !configReadOnly && (
           <ContextTab
             aiPrompt={aiPrompt} setAiPrompt={setAiPrompt}
             documents={documents} addDocument={addDocument} removeDocument={removeDocument}
